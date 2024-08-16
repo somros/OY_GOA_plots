@@ -40,7 +40,7 @@ fspb <- fspb %>%
   pivot_longer(-Code, names_to = "Age", values_to = "fspb") %>%
   mutate(Age = gsub("X","",Age))
 
-# read in lookup tables
+# read in lookup tables and f35 proxy values
 oy_key <- read.csv("data/oy_key.csv")
 f_lookup <- read.csv("data/f_lookup_OY_SS.csv")
 
