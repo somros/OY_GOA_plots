@@ -72,7 +72,7 @@ for(i in 1:length(f35_results)){
   print(paste("Doing", f35_results[i]))
   
   # grab the index from the file name
-  this_idx <- as.numeric(gsub("-result.rds", "", gsub("results/ms/flat_results//", "", f35_results[i])))
+  this_idx <- as.numeric(gsub("-result.rds", "", gsub("results/ms/flat_results/", "", f35_results[i])))
   
   # run information based on the index
   this_run <- oy_key %>% filter(idx == this_idx) %>% pull(run)
@@ -379,7 +379,7 @@ for(i in 1:length(f35_results)){
   print(paste("Doing", f35_results[i]))
   
   # grab the index from the file name
-  this_idx <- as.numeric(gsub("-result.rds", "", gsub("results/ms/flat_results//", "", f35_results[i])))
+  this_idx <- as.numeric(gsub("-result.rds", "", gsub("results/ms/flat_results/", "", f35_results[i])))
   
   # run information based on the index
   this_run <- oy_key %>% filter(idx == this_idx) %>% pull(run)
@@ -517,6 +517,26 @@ f_plot_ms <- to_plot %>%
 f_plot_ms
 
 ggsave(paste0('results/figures/catch',t,'_MS_ms.png'), f_plot_ms, width = 6, height = 6)
+
+# POL and COD for AMSS
+# amss_plot <- to_plot %>%
+#   filter(Code %in% c("POL","COD"), type == "Catch") %>%
+#   ggplot(aes(x = f, y = mt/1000, color = Climate, linetype = Fishing))+
+#   geom_line(linewidth = 1)+
+#   # geom_point(size = 1.6)+
+#   scale_color_viridis_d(begin = 0.2, end = 0.8)+
+#   geom_vline(data = ymax %>% 
+#                filter(LongName %in% c("Walleye pollock","Pacific cod")) %>% 
+#                filter(!(LongNamePlot == "Arrowtooth\nflounder" & Fishing == "Arrowtooth\nunderexploitation")), 
+#              aes(xintercept = f, color = Climate, linetype = Fishing))+
+#   theme_bw()+
+#   scale_y_continuous(limits = c(0, NA))+
+#   labs(x = 'Fishing mortality (F)', y = 'Catch (1000 mt)')+
+#   facet_grid2(LongNamePlot~type, scales = 'free', independent = 'all')+
+#   #facet_wrap(~ LongName, scales = "free", ncol = 1)+
+#   theme(strip.text.y = element_text(angle=0))
+# amss_plot
+# ggsave("amss_catch.png",amss_plot,width=5,height = 5.5)
 
 # make figures for supplement (break into two sets)
 grp1 <- unique(to_plot$LongNamePlot)[1:6]
