@@ -985,29 +985,53 @@ for(i in 1:nrow(specs)){
 specs_long <- specs %>%
   pivot_longer(-c(Species, Area), names_to = "Spec_Year", values_to = "mt") %>%
   separate(Spec_Year, into = c("Spec", "Year"), sep = "_") %>%
-  filter(Year > 1990, Area == "Total") %>%
-  mutate(mt = as.numeric(mt))
+  filter(Year > 1990, Area %in% c("Total","Total (GW)", "GW")) %>%
+  mutate(mt = as.numeric(mt)) %>%
+  drop_na() %>%
+  mutate(Area = "GOA")
 
-species <- sort(unique(specs_long$Species))
-key <- data.frame("Species" = species,
-                  "Tier" = c(3,5,3,3,3,5,3,4,4,3,3,3,3,3,3,3,3,3,3),
-                  "Code" = c("ATF","SKB","FFD","RFP","FHS","SKL","RFS","FFS","RFD","COD","POP","RFP","POL","REX","RFS","SBF","FFS","RFS","RFS"))
+# add in total groundfish catch reconstructions
+# Data is from "Catch Data" tab in AKFIN Answers using the following tags:
+# * Year: 1991-2024
+# * FMP Area: GOA
+# * FMP Subarea: --Select Value--
+# * Gear: --Select Value--
+# * Species Group: --Select Value--
+# * Choose a Report: "Detail with Processor/Vessel Characteristics"
 
-specs_long <- specs_long %>%
-  left_join(key, by = "Species") %>%
-  left_join(grps %>% select(Code, LongName), by = "Code")
+catch_data <- read.csv("data/Groundfish Total Catch.csv", fileEncoding = 'UTF-8-BOM')
+
+# there are a lot of non TAC species reported here, as well as by-catch species, species that are in the FMP but are not groundfish, etc.
+# For the purpose of comparing to ABC/TAC plots, we will filter only the species that have a TAC in the harvest specifications
+# Map species in the catch to species in the harvest specification data set
+tac_key <- read.csv("data/tac_catch_key.csv", header = T)
+
+# process the catch data so that it can be mapped to the harvest specification data
+catch_data_short <- catch_data %>%
+  select(Year, Species.Group.Name, Catch..mt.) %>%
+  left_join(tac_key, by = c("Species.Group.Name" = "Catch_sp")) %>%
+  group_by(Year, TAC_sp) %>%
+  summarise(mt = sum(Catch..mt., na.rm = T)) %>%
+  mutate(Area = "GOA", Spec = "Catch") %>%
+  select(TAC_sp, Area, Spec, Year, mt) %>%
+  rename(Species = TAC_sp)
+
+specs_long <- specs_long %>% rbind(catch_data_short) %>% drop_na()
 
 # order factors
-specs_long$Spec <- factor(specs_long$Spec, levels = c("OFL", "ABC", "TAC"))
+specs_long$Spec <- factor(specs_long$Spec, levels = c("OFL", "ABC", "TAC", "Catch"))
+
+colors <- c(viridis(14)[2:14], rocket(14)[2:14])
+colors <- c(viridis(11)[2:10], inferno(11)[2:10], cividis(10)[2:9])
 
 # make a bar chart
 harvest_specs_fig <- specs_long %>%
-  filter(Tier == 3) %>%
-  group_by(Year, Spec, LongName) %>%
+  #filter(Tier == 3) %>%
+  group_by(Year, Spec, Species) %>%
   summarise(mt = sum(mt, na.rm = T)) %>%
-  ggplot(aes(x = Year, y = mt/1000, fill = LongName))+
+  ggplot(aes(x = Year, y = mt/1000, fill = Species))+
   geom_bar(stat = "identity", position = "stack")+
-  scale_fill_viridis_d()+
+  scale_fill_manual(values = colors)+
   geom_hline(yintercept = 800, linetype = "dashed", color = "red")+
   theme_bw()+
   scale_x_discrete(breaks = seq(1992,2024,2))+
@@ -1015,11 +1039,11 @@ harvest_specs_fig <- specs_long %>%
   theme(axis.text.x = element_text(angle = 60, hjust = 1))+
   theme(legend.position="bottom",
         legend.spacing.x = unit(0.1, 'cm'))+
-  guides(fill = guide_legend(nrow = 4))+
+  guides(fill = guide_legend(nrow = 7))+
   facet_grid(~Spec)
 harvest_specs_fig
 
-#ggsave("results/figures/harvest_specs_S1.png", harvest_specs_fig, width = 8, height = 4)
+ggsave("results/figures/harvest_specs_S1.png", harvest_specs_fig, width = 10.5, height = 6.5)
 
 # Diets -----------------------------------------
 diet_runs <- data.frame("idx" = c(0,1,2,3,4),
