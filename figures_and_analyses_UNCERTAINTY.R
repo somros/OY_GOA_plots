@@ -296,13 +296,6 @@ num_idx <- as.numeric(gsub("([0-9]+)-result\\.rds", "\\1",
                            c(list.files(batch_ms_flat, pattern = ".rds", full.names = F))))
 f35_results <- f35_results[order(num_idx)]
 
-# # get the nc files
-# f35_nc <- c(list.files(batch_ms_nc, pattern = ".nc", full.names = T))
-# # reorder these based on the number in the filename
-# num_idx <- as.numeric(gsub("output_([0-9]+)\\.nc", "\\1",
-#                            c(list.files(batch_ms_nc, pattern = ".nc", full.names = F))))
-# f35_nc <- f35_nc[order(num_idx)]
-
 # create a data frame with catch output from each run within Step 2 (multispecies runs)
 catch_list <- list()
 for(i in 1:length(f35_results)){
@@ -777,7 +770,7 @@ cv_p3
 # This is qualitative, but it demonstrate a likely trophic link and its effects
 
 # read in diet comps for the base model and get the last 5 years
-base_diet <- read.table("results/diets/Base_DietCheck.txt", sep = " ", header = T)
+base_diet <- read.table("results/diets/output_0DietCheck.txt", sep = " ", header = T)
 
 # put in long format
 diet_long_other <- base_diet %>%
@@ -953,12 +946,13 @@ other_plot_top_diets
 # S1.1. Harvest specifications --------------------------------------------
 grps <- read.csv("data/GOA_Groups.csv")
 
+# this spreadsheet is available for download from AKFIN Answers
 specs <- read_excel("data/GOA_harvest specs_1986-2024.xlsx", 
                     sheet = 1,
                     na = "n/a",
                     n_max = 131)
 
-# lots of cleaning to do
+# need to clean the data set
 # drop asterisks and commas and turn to numeric
 for(col in names(specs)){
   specs[[col]] <- gsub("\\*","", specs[[col]])
@@ -1006,7 +1000,6 @@ specs_long <- specs_long %>%
 # order factors
 specs_long$Spec <- factor(specs_long$Spec, levels = c("OFL", "ABC", "TAC"))
 
-
 # make a bar chart
 harvest_specs_fig <- specs_long %>%
   filter(Tier == 3) %>%
@@ -1024,11 +1017,12 @@ harvest_specs_fig <- specs_long %>%
         legend.spacing.x = unit(0.1, 'cm'))+
   guides(fill = guide_legend(nrow = 4))+
   facet_grid(~Spec)
+harvest_specs_fig
 
 #ggsave("results/figures/harvest_specs_S1.png", harvest_specs_fig, width = 8, height = 4)
 
-# S1.3. Arrowtooth flounder diets -----------------------------------------
-diet_runs <- data.frame("idx" = c(1556,13,25,39,51),
+# Diets -----------------------------------------
+diet_runs <- data.frame("idx" = c(0,1,2,3,4),
                         "run" = c("Base model,\ncalibration fishing",
                                   "MFMSY varies for\nall focal groups,\nhistorical climate",
                                   "Arrowtooth\nunderexploitation,\nhistorical climate",
@@ -1045,7 +1039,7 @@ for(r in 1:nrow(diet_runs)){
   
   diet_long_cohort[[r]] <- diet %>%
     mutate(Time = Time / 365) %>%
-    filter(Time > 75 & Time <=80) %>% # <= (ceiling(max(Time))-5)) %>% # focus on last 5 years of the run
+    filter(Time > 75 & Time <=80) %>% # focus on last 5 years of the run
     group_by(Predator, Cohort) %>%
     summarise(across(KWT:DR, mean)) %>%
     ungroup() %>%
@@ -1063,7 +1057,7 @@ for(r in 1:nrow(diet_runs)){
 
 diet_long_cohort <- bind_rows(diet_long_cohort)
 
-pred_names <- grps %>% filter(Code %in% c("ATF", top_preds)) %>% pull(Name)
+pred_names <- grps %>% filter(Code %in% c("ATF", "HAL", top_preds)) %>% pull(Name)
 
 diet_long_preds <- diet_long_cohort %>% filter(Predator_Name %in% pred_names)
 
@@ -1077,28 +1071,61 @@ diet_long_preds$run <- factor(diet_long_preds$run, levels = c("Base model,\ncali
 # plot arrowtooth flounder alone for figure S1.3
 atf_diet <- diet_long_preds %>%
   filter(Predator_Name == "Arrowtooth_flounder") %>%
-  filter(run == "Base model,\ncalibration fishing") %>%
   drop_na()
 
 colourCount <- length(unique(atf_diet$Prey_Name))
 getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
 
+# plot across scenarios (except Base model)
 p_atf_diet <- atf_diet %>%
+  filter(run != "Base model,\ncalibration fishing") %>%
+  ggplot(aes(x = Cohort+1, y = Prop * 100, fill = Prey_LongName))+
+  geom_bar(stat = 'identity', position = 'stack')+
+  scale_x_continuous(breaks = 1:10)+
+  scale_fill_manual(values = getPalette(colourCount))+
+  theme_bw()+
+  labs(x = '', y = "Diet preference (%)", fill = "Prey")+
+  facet_grid(~run)
+p_atf_diet
+ggsave("results/figures/diet_plots/ATF_diet_S3.png", p_atf_diet, width = 9, height = 5)
+
+# plot ATF in the base model only (Fig. S1.3)
+p_atf_diet_base <- atf_diet %>%
+  filter(run == "Base model,\ncalibration fishing") %>%
   ggplot(aes(x = Cohort+1, y = Prop * 100, fill = Prey_LongName))+
   geom_bar(stat = 'identity', position = 'stack')+
   scale_x_continuous(breaks = 1:10)+
   scale_fill_manual(values = getPalette(colourCount))+
   theme_bw()+
   labs(x = '', y = "Diet preference (%)", fill = "Prey")
-p_atf_diet
+p_atf_diet_base
+ggsave("results/figures/diet_plots/ATF_diet_S3_Base.png", p_atf_diet_base, width = 6, height = 5)
 
-#ggsave("results/figures/diet_plots/ATF_diet_S3.png", p_atf_diet, width = 6, height = 6)
+# Halibut
+hal_diet <- diet_long_preds %>%
+  filter(Predator_Name == "Halibut") %>%
+  drop_na()
 
+colourCount <- length(unique(hal_diet$Prey_Name))
+getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+
+# plot Base diets for Halibut
+p_hal_diet <- hal_diet %>%
+  filter(run == "Base model,\ncalibration fishing") %>%
+  ggplot(aes(x = Cohort+1, y = Prop * 100, fill = Prey_LongName))+
+  geom_bar(stat = 'identity', position = 'stack')+
+  scale_x_continuous(breaks = 1:10)+
+  scale_fill_manual(values = getPalette(colourCount))+
+  theme_bw()+
+  labs(x = '', y = "Diet preference (%)", fill = "Prey")+
+  facet_grid(~run)
+p_hal_diet
+ggsave("results/figures/diet_plots/HAL_diet_S3_Base.png", p_hal_diet, width = 6, height = 5)
 
 # plot all together for Figure S1.10
 # drop ATF here
 diet_long_preds <- diet_long_preds %>%
-  filter(Predator_Name != "Arrowtooth_flounder")
+  filter(!Predator_Name %in% c("Arrowtooth_flounder", "Halibut"))
 
 # pred longname for facets
 diet_long_preds$Predator_LongNamePlot <- gsub(" ", "\n", diet_long_preds$Predator_LongName)
@@ -1123,37 +1150,37 @@ p_all_diet
 #ggsave("results/figures/diet_plots/all_S10.png", p_all_diet, width = 8.5, height = 6)
 
 # Production curves S1.5 --------------------------------------------------
+# These refer to the single-species runs in Step 1
 ss_yield_long <- f_df %>%
-  select(Code, LongName, f, fidx, type, mt)
+  select(-CV)
 
 # get b0 from SS curves
 b0 <- ss_yield_long %>% 
   group_by(Code) %>%
   slice_min(f) %>% 
   ungroup() %>%
-  filter(type == "Biomass") %>% 
-  dplyr::select(LongName, mt) %>% 
-  rename(b0 = mt)
+  filter(Var == "Biomass") %>% 
+  dplyr::select(LongName, Mean) %>% 
+  rename(b0 = Mean)
 
 # get max yield
 ymax <- ss_yield_long %>% 
-  filter(type == "Catch") %>% 
+  filter(Var == "Catch") %>% 
   group_by(LongName) %>%
-  slice_max(mt) %>%
+  slice_max(Mean) %>%
   ungroup() %>%
-  dplyr::select(LongName, mt, f) %>% 
-  rename(ymax = mt) 
+  dplyr::select(LongName, Mean, f) %>% 
+  rename(ymax = Mean) 
 
 # we are plotting yield fraction against depletion
 yield_func <- ss_yield_long %>%
   drop_na() %>%
-  dplyr::select(LongName, type, f, mt) %>%
-  pivot_wider(id_cols = c(LongName, f), names_from = type, values_from = mt) %>%
+  dplyr::select(LongName, Var, f, Mean) %>%
+  pivot_wider(id_cols = c(LongName, f), names_from = Var, values_from = Mean) %>%
   left_join(b0, by = c("LongName")) %>% # if you are keep static reference point
   mutate(depletion = Biomass / b0) %>%
   left_join(ymax %>% select(-f), by = c("LongName")) %>%
   mutate(yfrac = Catch / ymax) %>%
-  #mutate(experiment = ifelse(experiment == "ms", "Multispecies", "Single-species")) %>%
   dplyr::select(LongName, yfrac, depletion, f)
 
 # prepare data frames to write the following quantities on the plot:
@@ -1198,13 +1225,13 @@ yield_func_plot
 # S1.6, stocks below B35% -------------------------------------------------
 # How many stocks are below 35% B0 for each scenario?
 # Use static B0 from Base Scenario for this
-b0 <- ms_yield_long %>% filter(mult == 0, type == "Biomass", run == "base") %>% dplyr::select(LongName, mt) %>% rename(b0 = mt)
+b0 <- ms_yield_df %>% filter(mult == 0, Var == "Biomass", run == "base") %>% dplyr::select(LongName, Mean) %>% rename(b0 = Mean)
 
-below_target <- ms_yield_long %>%
-  filter(type == "Biomass") %>%
+below_target <- ms_yield_df %>%
+  filter(Var == "Biomass") %>%
   filter(!(run %in% c("atf", "atf_climate") & LongName == "Arrowtooth flounder")) %>%
   left_join(b0, by = "LongName") %>%
-  mutate(depletion = mt / b0) %>%
+  mutate(depletion = Mean / b0) %>%
   mutate(below_target = ifelse(depletion < 0.35, 1, 0)) %>%
   group_by(run, mult) %>%
   mutate(n_below_target = sum(below_target)) %>%
@@ -1242,25 +1269,25 @@ p_below_target
 # treat this as model-wide MSY
 ss_msy <- f_df %>%
   mutate(experiment = "ss") %>%
-  select(Code, LongName, f, fidx, experiment, type, mt) %>%
-  filter(type == "Catch") %>%
+  select(Code, LongName, f, fidx, experiment, Var, Mean) %>%
+  filter(Var == "Catch") %>%
   group_by(Code, LongName) %>%
-  slice_max(mt) %>%
+  slice_max(Mean) %>%
   ungroup() %>%
-  select(LongName, mt) %>%
-  rename(mt_ss = mt)
+  select(LongName, Mean) %>%
+  rename(mt_ss = Mean)
 
 # this is the scenario where ATF is kept at low fishing pressure, all other groups are varied
 ms_msy <- catch_df %>%
-  pivot_longer(-c(run, mult, idx), names_to = "Code", values_to = "mt") %>%
+  select(-catch_cv) %>%
   group_by(run, mult) %>%
-  mutate(total_yield = sum(mt),
-         prop = mt / total_yield) %>%
+  mutate(total_yield = sum(mean_catch),
+         prop = mean_catch / total_yield) %>%
   ungroup() %>%
   left_join(grps %>% select(Code, LongName), by = "Code") %>%
   filter(mult == 1, run %in% c("base","atf")) %>%
-  select(LongName, run, mt) %>%
-  rename(mt_ms = mt)
+  select(LongName, run, mean_catch) %>%
+  rename(mt_ms = mean_catch)
 
 ms_vs_ss_walters <- ms_msy %>%
   left_join(ss_msy) %>%
@@ -1302,18 +1329,18 @@ walters_plot <- ms_vs_ss_walters %>%
   guides(color="none") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))+
   facet_wrap(~Fishing, nrow = 2)
-
-# Comparing SS to (either) MS scenario:
-# Across all groups, MS MSY is higher than SS MSY.
-# Biggest differences for groups that are more top-down controlled (pollock, FHS, Cod, FFS)
-# Groups that have smallest difference are higher trophic levels or groups that are parameterized to be less predated upon
-# It makes sense though that there will always be less predators in the MS runs
-# This shows that it varies by species, but there is a strong top-down control in the system
-
+walters_plot
 #ggsave("results/figures/walters_plot_S1.7.png", walters_plot, width = 5, height = 7)
 
 # S1.9. Numbers at age from nc files --------------------------------------------
 # expected to decline and be fairly close to 0 for older age classes when SSB is near 0
+
+# # get the nc files
+f35_nc <- c(list.files(batch_ms_nc, pattern = ".nc", full.names = T))
+# reorder these based on the number in the filename
+num_idx <- as.numeric(gsub("output_([0-9]+)\\.nc", "\\1",
+                           c(list.files(batch_ms_nc, pattern = ".nc", full.names = F))))
+f35_nc <- f35_nc[order(num_idx)]
 
 # function sum over depth layers in each array slice
 collapse_array <- function(mat){
@@ -1340,8 +1367,7 @@ t3_names <- grps %>%
   filter(Code %in% t3_fg) %>% 
   mutate(Code = factor(Code, levels = t3_fg)) %>%
   arrange(Code) %>%
-  pull(Name) #%>%
-#sort()
+  pull(Name) 
 
 extract_naa <- function(ncfile){
   
@@ -1459,5 +1485,44 @@ naa_plot2 <- naa %>%
 naa_plot2
 
 # make a figure
-# ggsave(paste0('NOAA_Azure/results/figures/oy_paper/naa',t,'_1.png'), naa_plot1, width = 7, height = 7)
-# ggsave(paste0('NOAA_Azure/results/figures/oy_paper/naa',t,'_2.png'), naa_plot2, width = 7, height = 7)
+# ggsave(paste0('results/figures/naa_1.png'), naa_plot1, width = 7, height = 7)
+# ggsave(paste0('results/figures/naa_2.png'), naa_plot2, width = 7, height = 7)
+
+# Version 2
+# from naa to proportions at age
+paa <- naa %>%
+  group_by(run,Fishing,Climate,mult,Name,LongNamePlot)%>%
+  mutate(tot_abun = sum(abun)) %>%
+  ungroup() %>%
+  mutate(paa = abun / tot_abun)
+
+paa_plot1 <- paa %>%
+  filter(LongNamePlot %in% grp1) %>%
+  filter(Climate == "ssp585 (2075-2085)") %>%
+  ggplot(aes(x = age, y = paa, group = mult, color = mult))+
+  geom_line()+
+  scale_color_viridis()+
+  scale_x_continuous(breaks = c(1:10))+
+  theme_bw()+
+  labs(x = "Age class", y = 'Proportion at age (numbers)', color = expression(MF[MSY] ~ "multiplier"))+
+  facet_grid2(LongNamePlot~Fishing, scales = 'free')+
+  theme(strip.text.y = element_text(angle=0))
+paa_plot1
+
+grp2 <- unique(naa$LongNamePlot)[7:12]
+paa_plot2 <- paa %>%
+  filter(LongNamePlot %in% grp2) %>%
+  filter(Climate == "ssp585 (2075-2085)") %>%
+  ggplot(aes(x = age, y = paa, group = mult, color = mult))+
+  geom_line()+
+  scale_color_viridis()+
+  scale_x_continuous(breaks = c(1:10))+
+  theme_bw()+
+  labs(x = "Age class", y = 'Proportion at age (numbers)', color = expression(MF[MSY] ~ "multiplier"))+
+  facet_grid2(LongNamePlot~Fishing, scales = 'free')+
+  theme(strip.text.y = element_text(angle=0))
+paa_plot2
+
+# make a figure
+# ggsave(paste0('results/figures/paa_1.png'), paa_plot1, width = 7, height = 7)
+# ggsave(paste0('results/figures/paa_2.png'), paa_plot2, width = 7, height = 7)
