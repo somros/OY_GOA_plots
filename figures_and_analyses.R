@@ -1026,8 +1026,8 @@ specs_long$Species <- gsub("/","\n",specs_long$Species)
 specs_long$Species <- gsub(" and "," and\n",specs_long$Species)
 specs_long$Species <- gsub(" \\(","\n\\(",specs_long$Species)
 
-
-colors <- c(viridis(14)[2:14], rocket(14)[2:14])
+# set some colors - this plot has lots of species
+# this combination works OK in that the key stocks are readable enough, but it is not greyscale- nor colorblind-friendly
 colors <- c(viridis(11)[2:10], inferno(11)[2:10], cividis(10)[2:9])
 
 # make a bar chart
