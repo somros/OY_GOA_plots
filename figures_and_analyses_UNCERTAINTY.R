@@ -1,4 +1,5 @@
 # Alberto Rovellini
+# University of Washington - School of Aquatic and Fishery Sciences
 # 01/21/2025
 # This script takes the output of the Atlantis runs for the evaluation of the Optimum Yield in the Gulf of Alaska and creates the analyses and figures for the associated manuscript
 
@@ -47,7 +48,7 @@ t3_names <- grps %>% filter(Code %in% t3_fg) %>% pull(Name) # names for nc files
 
 # Figure 2. Single-species biomass and catch  --------------------------------------------------------------
 
-# list files from the singlespecies runs (step 1)
+# list files from the single species runs (step 1)
 # these are produced by the script ss_processing.R
 f_files <- list.files(batch_ss, full.names = T)
 
@@ -628,7 +629,6 @@ cv_df <- to_plot %>%
   dplyr::select(LongName, Fishing, Climate, mult, Var, CV)
 
 cv_p1 <- cv_df %>%
-  #filter(mult > 0) %>%
   ggplot()+
   geom_boxplot(aes(x = mult, y = CV, group = interaction(mult,Var), fill = Var, color = Var), alpha = 0.7)+
   scale_x_continuous(breaks = seq(0,4,0.5))+
@@ -950,7 +950,7 @@ other_plot_top_diets
 # SUPPLEMENTARY FIGURES #
 #########################
 
-# S1.1. Harvest sepcifications --------------------------------------------
+# S1.1. Harvest specifications --------------------------------------------
 grps <- read.csv("data/GOA_Groups.csv")
 
 specs <- read_excel("data/GOA_harvest specs_1986-2024.xlsx", 
