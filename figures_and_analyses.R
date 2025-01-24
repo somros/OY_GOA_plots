@@ -1021,6 +1021,12 @@ specs_long <- specs_long %>% rbind(catch_data_short) %>% drop_na()
 # order factors
 specs_long$Spec <- factor(specs_long$Spec, levels = c("OFL", "ABC", "TAC", "Catch"))
 
+# format stock names for the plot
+specs_long$Species <- gsub("/","\n",specs_long$Species)
+specs_long$Species <- gsub(" and "," and\n",specs_long$Species)
+specs_long$Species <- gsub(" \\(","\n\\(",specs_long$Species)
+
+
 colors <- c(viridis(14)[2:14], rocket(14)[2:14])
 colors <- c(viridis(11)[2:10], inferno(11)[2:10], cividis(10)[2:9])
 
@@ -1035,7 +1041,7 @@ harvest_specs_fig <- specs_long %>%
   geom_hline(yintercept = 800, linetype = "dashed", color = "red")+
   theme_bw()+
   scale_x_discrete(breaks = seq(1992,2024,2))+
-  labs(x = "", y = "1000 mt", fill = "Stock")+
+  labs(x = "", y = "1000 mt", fill = "")+
   theme(axis.text.x = element_text(angle = 60, hjust = 1))+
   theme(legend.position="bottom",
         legend.spacing.x = unit(0.1, 'cm'))+
@@ -1043,7 +1049,13 @@ harvest_specs_fig <- specs_long %>%
   facet_grid(~Spec)
 harvest_specs_fig
 
-ggsave("results/figures/harvest_specs_S1.png", harvest_specs_fig, width = 10.5, height = 6.5)
+ggsave("results/figures/harvest_specs_S1.png", harvest_specs_fig, width = 8.3, height = 5.5)
+
+# mean recent catch for text
+tt <- specs_long %>%
+  filter(Spec == "Catch") %>%
+  group_by(Year) %>%
+  summarise(Catch = sum(mt)) 
 
 # Diets -----------------------------------------
 diet_runs <- data.frame("idx" = c(0,1,2,3,4),
