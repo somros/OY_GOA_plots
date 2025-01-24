@@ -1,10 +1,8 @@
 # Alberto Rovellini
 # 01/21/2025
-# This code takes output of the MFMSY permutation runs from 4 scenarios and plots:
-# Production functions
-# Catch and biomass curves
-# Numbers at age
-# biomass of forage fish and predators
+# This script takes the output of the Atlantis runs for the evaluation of the Optimum Yield in the Gulf of Alaska and creates the analyses and figures for the associated manuscript
+
+# Set up the environment and read data ------------------------------------------------
 
 library(tidyverse)
 library(here)
@@ -17,21 +15,16 @@ library(ncdf4)
 library(rbgm)
 library(RColorBrewer)
 
+# general settings
+t <- format(Sys.time(),'%Y-%m-%d %H-%M-%S') # set the clock to date plots
 select <- dplyr::select
-
-# Set up env and read data ------------------------------------------------
-
 burnin <- 30 # years of burn-in
+maxmult <- 4 # this is the maximum explored multiplier on FMSY
 
-# identify which data we want to work on
-batch_res <- "results/ms/flat_results/" # these are the biomage, catch, and mort files
-batch_nc <- "results/ms/nc_results/" # these are the full out.nc files
-
-ss_job <- "results/ss/processed/" # this is SS runs
-maxmult <- 4 # this is the full range of explored F
-
-# set the clock to date plots
-t <- format(Sys.time(),'%Y-%m-%d %H-%M-%S')
+# set paths to Atlantis results folders
+batch_ss <- "results/ss/processed/" # there are the result from the single-species runs (Step 1)
+batch_ms_flat <- "results/ms/flat_results/" # these are the biomage, catch, and mort files
+batch_ms_nc <- "results/ms/nc_results/" # these are the full out.nc files
 
 # read in Groups.csv file
 grps <- read.csv('data/GOA_Groups.csv')
@@ -52,169 +45,11 @@ f_lookup <- read.csv("data/f_lookup_OY_SS.csv")
 t3_fg <- f_lookup %>% pull(species) %>% unique() %>% sort()
 t3_names <- grps %>% filter(Code %in% t3_fg) %>% pull(Name) # names for nc files pulling
 
-# list the rds files
-f35_results <- list.files(file.path("results", "ms", "flat_results"), 
-                                         pattern = ".rds", 
-                                         full.names = TRUE)
-# order them correctly
-# reorder these based on the number in the filename
-num_idx <- as.numeric(gsub("([0-9]+)-result\\.rds", "\\1", 
-                           c(list.files(batch_res, pattern = ".rds", full.names = F))))
-f35_results <- f35_results[order(num_idx)]
-
-# get the nc files
-f35_nc <- c(list.files(batch_nc, pattern = ".nc", full.names = T))
-# reorder these based on the number in the filename
-num_idx <- as.numeric(gsub("output_([0-9]+)\\.nc", "\\1", 
-                           c(list.files(batch_nc, pattern = ".nc", full.names = F))))
-f35_nc <- f35_nc[order(num_idx)]
-
-# extract biomass and catch from the MS runs
-# TODO: should this even be up here?
-ms_yield_list <- list()
-
-for(i in 1:length(f35_results)){
-  
-  print(paste("Doing", f35_results[i]))
-  
-  # grab the index from the file name
-  this_idx <- as.numeric(gsub("-result.rds", "", gsub("results/ms/flat_results/", "", f35_results[i])))
-  
-  # run information based on the index
-  this_run <- oy_key %>% filter(idx == this_idx) %>% pull(run)
-  this_mult <- oy_key %>% filter(idx == this_idx) %>% pull(mult)
-  
-  # extract tables from results
-  this_result <- readRDS(f35_results[i])
-  # the packaging of the RDS object was different between the eScience runs and the batch (doAzureParallel) runs
-  if(length(this_result)==1) {
-    this_result <- this_result[[1]]
-  }
-  
-  biomage <- this_result[[2]]
-  catch <- this_result[[3]]
-  mort <- this_result[[4]]
-  
-  # now extract data
-  # SSB to plot and report in tables
-  spawning_biomass <- biomage %>% 
-    pivot_longer(-Time, names_to = 'Code.Age', values_to = 'biomass_mt') %>%
-    separate(Code.Age, into = c('Code', 'Age'), sep = '\\.') %>%
-    filter(Code %in% t3_fg) %>%
-    left_join(fspb, by = c('Code','Age')) %>%
-    mutate(biomass_mt = biomass_mt * fspb) %>%
-    group_by(Time,Code) %>%
-    summarise(biomass_mt = sum(biomass_mt)) %>%
-    group_by(Code) %>%
-    slice_max(Time, n = 5) %>%
-    summarise(mean_biom = mean(biomass_mt),
-              biom_cv = sd(biomass_mt) / mean(biomass_mt))
-  
-  # total catch
-  # taking mean of the last 5 years
-  catch_vals <- catch %>%
-    dplyr::select(c(Time, all_of(t3_fg))) %>%
-    pivot_longer(-Time, names_to = "Code", values_to = "catch_mt") %>%
-    group_by(Code) %>%
-    slice_max(Time, n = 5) %>%
-    summarise(mean_catch = mean(catch_mt),
-              catch_cv = sd(catch_mt) / mean(catch_mt))
-  
-  # # calculate realized F after 1 year of data
-  # For runs with a burn-in, this has to be the biomass at the end of the burn-in, when we start fishing with the new scalar
-  # # get initial biomass for the selected age classes
-  biom_age_t1 <- biomage %>% 
-    filter(Time == 365 * burnin) %>%# this is the burn-in years
-    pivot_longer(-Time, names_to = 'Code.Age', values_to = 'biomass') %>%
-    separate(Code.Age, into = c('Code', 'Age'), sep = '\\.') %>%
-    left_join(selex, by = 'Code') %>%
-    mutate(idx = as.numeric(Age) - as.numeric(age_class_selex)) %>%
-    filter(is.na(idx) | idx >= 0) %>%
-    group_by(Code) %>%
-    summarise(biomass = sum(biomass)) %>%
-    ungroup() %>% 
-    filter(Code %in% t3_fg)
-  # 
-  # # catch (one time step after biomass: how much did we catch in this time?)
-  catch_t1 <- catch %>% 
-    select(Time, all_of(t3_fg)) %>% 
-    filter(Time == 365 * (burnin + 1)) %>% # careful - there is a small transition phase
-    summarise(across(everything(), ~ mean(.x, na.rm = TRUE))) %>%
-    pivot_longer(-Time, names_to = 'Code', values_to = 'catch') %>%
-    select(-Time)
-  # 
-  # # calc realized f
-  f_t1 <- biom_age_t1 %>% left_join(catch_t1, by = "Code") %>%
-    mutate(exp_rate = catch/biomass,
-           f = -log(1-exp_rate)) %>%#,
-    #fidx = fidx) %>% # need this for joining later on
-    select(Code, f)#, fidx) 
-  
-  # # bind all
-  f_frame <- f_t1 %>%
-    left_join(spawning_biomass) %>%
-    left_join(catch_vals) %>%
-    mutate(run = this_run,
-           mult = this_mult)
-  
-  # reshape
-  f_frame <- f_frame %>%
-    pivot_longer(
-      cols = c(mean_biom, mean_catch, biom_cv, catch_cv),
-      names_to = "temp",
-      values_to = "value"
-    ) %>%
-    mutate(
-      Var = case_when(
-        temp == "mean_biom" ~ "Biomass",
-        temp == "mean_catch" ~ "Catch",
-        temp == "biom_cv" ~ "Biomass",
-        temp == "catch_cv" ~ "Catch"
-      ),
-      type = ifelse(grepl("mean", temp), "Mean", "CV")
-    ) %>%
-    select(-temp) %>%
-    pivot_wider(
-      names_from = type,
-      values_from = value
-    ) %>%
-    select(Code, f, run, mult, Var, Mean, CV) %>%
-    left_join(grps %>% select(Code, LongName), by = 'Code')
-  
-  # add to multispecies yield list
-  ms_yield_list[[i]] <- f_frame
-}
-
-ms_yield_df <- bind_rows(ms_yield_list)
-
-# Reference points
-# get two data frames: one for b0 and one for maximum yield
-# b0
-# For climate scenarios leave it fixed to base conditions
-b0 <- ms_yield_df %>% filter(mult == 0, Var == "Biomass", run == "base") %>% dplyr::select(LongName, Mean) %>% rename(b0 = Mean)
-
-# max yield
-ymax_ms <- ms_yield_df %>% 
-  filter(Var == "Catch") %>% 
-  group_by(LongName, run) %>%
-  slice_max(Mean) %>%
-  ungroup() %>%
-  dplyr::select(LongName, run, Mean, f) %>% 
-  rename(ymax = Mean) 
-
-ymax <- ymax_ms
-
-# handle the NaN's from FHS
-ms_yield_df <- as.data.frame(ms_yield_df)
-ms_yield_df$f[is.nan(ms_yield_df$f)] <- NA
-
-#### CV analysis #####
-# Find a place for this depending on which figure it will go into
-
-
 # Figure 2. Single-species biomass and catch  --------------------------------------------------------------
 
-f_files <- list.files(ss_job, full.names = T)
+# list files from the singlespecies runs (step 1)
+# these are produced by the script ss_processing.R
+f_files <- list.files(batch_ss, full.names = T)
 
 # create empty list to fill with data frame for the yield curve
 f_df_ls <- list()
@@ -274,6 +109,7 @@ b35 <- f_df %>%
   select(LongName, Code, Var, b35)
 
 # read in MSY information (from FMP)
+# this classification is current as of 2023, note that stocks may change Tier over time
 tier3 <- read_xlsx('data/msy.xlsx', sheet = 1, range = 'A3:J19') %>%
   select(Stock, FOFL) %>%
   set_names(c('Stock', 'FMSY'))
@@ -295,10 +131,10 @@ tier_3_4_5 <- tier_3_4_5 %>%
 all_f <- tier_3_4_5
 
 # find groups to plot
-to_plot <- unique(f_df$Code)
+grp_to_plot <- unique(f_df$Code)
 
 # bind FMSY information
-fmsy <- data.frame('Code' = to_plot) %>%
+fmsy <- data.frame('Code' = grp_to_plot) %>%
   left_join(all_f) %>%
   left_join(grps %>% select(Code, LongName))
 
@@ -308,6 +144,10 @@ fmsy[fmsy$Code=='HAL',]$FMSY <- 0.2 # this is M
 # get f that returned the highest yield, and level of depletion for that F
 sp <- unique(f_df$LongName)
 
+# create a data frame with the reference point estimates from Atlantis
+# FMSY here is the F that returned the highest catch at equilibrium
+# BFMSY is the corresponding B
+# depletion is the fraction of the unexploited spawning biomass
 atlantis_fmsy_ls <- list()
 
 for(i in 1:length(sp)){
@@ -329,6 +169,7 @@ for(i in 1:length(sp)){
   
   depletion_fmsy <- b_fmsy / b0
   
+  # track which run it is along the ramp for each stock
   fidx_fmsy <- this_f_df %>%
     filter(f == atlantis_fmsy) %>%
     pull(fidx) %>%
@@ -344,7 +185,7 @@ for(i in 1:length(sp)){
 atlantis_fmsy <- bind_rows(atlantis_fmsy_ls)
 
 # save this for future calculations
-# write.csv(atlantis_fmsy, "NOAA_Azure/data/f35_vector_PROXY_OY_SS.csv", row.names = F)
+# write.csv(atlantis_fmsy, "data/f35_vector_PROXY_OY_SS.csv", row.names = F)
 
 # annotations for the plots (atlantis depletion)
 annotations <- atlantis_fmsy %>% 
@@ -366,9 +207,6 @@ p_ms <- f_df_ms %>%
   ggplot(aes(x = f, y = Mean/1000))+
   geom_line()+
   geom_point(size = 1.5)+
-  # geom_errorbar(aes(ymin = Mean/1000 - (Mean/1000 * CV),
-  #                   ymax = Mean/1000 + (Mean/1000 * CV)),
-  #               width = 0.1)+
   geom_vline(data = fmsy %>% filter(LongName %in% key_grps), aes(xintercept = FMSY, group = LongNamePlot), linetype = 'dashed', color = 'orange')+
   geom_vline(data = atlantis_fmsy %>% filter(LongName %in% key_grps), aes(xintercept = atlantis_fmsy, group = LongNamePlot), linetype = 'dashed', color = 'blue')+
   geom_hline(data = atlantis_fmsy %>% filter(LongName %in% key_grps) %>% mutate(Var = 'Biomass'),
@@ -390,9 +228,6 @@ f_plot1 <- f_df_ms %>%
   ggplot(aes(x = f, y = Mean/1000))+
   geom_line()+
   geom_point(size = 2)+
-  # geom_errorbar(aes(ymin = Mean/1000 - (Mean/1000 * CV),
-  #                   ymax = Mean/1000 + (Mean/1000 * CV)),
-  #               width = 0.1)+
   geom_vline(data = fmsy %>% filter(LongNamePlot %in% grp1), aes(xintercept = FMSY, group = LongNamePlot), linetype = 'dashed', color = 'orange')+
   geom_vline(data = atlantis_fmsy %>% filter(LongNamePlot %in% grp1), aes(xintercept = atlantis_fmsy, group = LongNamePlot), linetype = 'dashed', color = 'blue')+
   geom_hline(data = atlantis_fmsy %>% filter(LongNamePlot %in% grp1) %>% mutate(Var = 'Biomass'),
@@ -412,9 +247,6 @@ f_plot2 <- f_df_ms %>%
   ggplot(aes(x = f, y = Mean/1000))+
   geom_line()+
   geom_point(size = 2)+
-  # geom_errorbar(aes(ymin = Mean/1000 - (Mean/1000 * CV),
-  #                   ymax = Mean/1000 + (Mean/1000 * CV)),
-  #               width = 0.1)+
   geom_vline(data = fmsy %>% filter(LongNamePlot %in% grp2), aes(xintercept = FMSY, group = LongNamePlot), linetype = 'dashed', color = 'orange')+
   geom_vline(data = atlantis_fmsy %>% filter(LongNamePlot %in% grp2), aes(xintercept = atlantis_fmsy, group = LongNamePlot), linetype = 'dashed', color = 'blue')+
   geom_hline(data = atlantis_fmsy %>% filter(LongNamePlot %in% grp2) %>% mutate(Var = 'Biomass'),
@@ -431,8 +263,46 @@ f_plot2
 #ggsave(paste0('results/figures/yield_curves',t,'_OY_1.png'), f_plot1, width = 7, height = 7)
 #ggsave(paste0('results/figures/yield_curves',t,'_OY_2.png'), f_plot2, width = 7, height = 7)
 
+####################################
+# Analysis of end-of-run variability
+####################################
+# This has the purpose of providing a general sense of the variability and noise over the last 5 years of a run
+# CV are computed for metrics over the last 5 years of each run
+# This is no true measure of uncertainty because runs are deterministic and no alternative starts were explored
+# Future work should include more comprehensive analyses of uncertainty
+cv_df_ss <- f_df_ms %>%
+  dplyr::select(LongName, f, Var, CV)
+
+cv_p_ss <- cv_df_ss %>%
+  filter(Var == "Biomass") %>%
+  ggplot()+
+  geom_point(aes(x = f, y = CV), alpha = 0.7)+
+  theme_bw()+
+  labs(x = "F", y = "CV", fill = "") +
+  facet_wrap(~LongName, nrow = 4)
+cv_p_ss
+
+#ggsave("results/figures/cv_p_ss.png", cv_p_ss, width = 8, height = 5)
+
 # Figure 3. Global yield ---------------------------------------------------------------
-# list
+# # list the rds files
+f35_results <- list.files(file.path("results", "ms", "flat_results"),
+                          pattern = ".rds",
+                          full.names = TRUE)
+# order them correctly
+# reorder these based on the number in the filename
+num_idx <- as.numeric(gsub("([0-9]+)-result\\.rds", "\\1",
+                           c(list.files(batch_ms_flat, pattern = ".rds", full.names = F))))
+f35_results <- f35_results[order(num_idx)]
+
+# # get the nc files
+# f35_nc <- c(list.files(batch_ms_nc, pattern = ".nc", full.names = T))
+# # reorder these based on the number in the filename
+# num_idx <- as.numeric(gsub("output_([0-9]+)\\.nc", "\\1",
+#                            c(list.files(batch_ms_nc, pattern = ".nc", full.names = F))))
+# f35_nc <- f35_nc[order(num_idx)]
+
+# create a data frame with catch output from each run within Step 2 (multispecies runs)
 catch_list <- list()
 for(i in 1:length(f35_results)){
   
@@ -470,20 +340,14 @@ for(i in 1:length(f35_results)){
 
 catch_df <- bind_rows(catch_list)
 
-# get a table of CV of catch
-cv_fmsy <- catch_df %>%
-  filter(mult == 1) %>%
-  dplyr::select(Code, catch_cv, run)
-# these are very, very small. Which is unsurprising given the runs are at equilibrium and we have one data point per year
-
 # reshape and calculate total
 catch_df_long <- catch_df %>%
   dplyr::select(-catch_cv) %>% # drop uncertainty for the bar plot
-  pivot_longer(-c(run, mult, idx), names_to = "Code", values_to = "mt") %>%
+  #pivot_longer(-c(run, mult, idx), names_to = "Code", values_to = "mt") %>%
   filter(Code != "HAL") %>%
   group_by(run, mult) %>%
-  mutate(total_yield = sum(mt),
-         prop = mt / total_yield) %>%
+  mutate(total_yield = sum(mean_catch ),
+         prop = mean_catch / total_yield) %>%
   ungroup() %>%
   left_join(grps %>% select(Code, LongName), by = "Code")
 
@@ -494,7 +358,7 @@ catch_df_long_ak <- catch_df_long %>%
   left_join(catch_scalars %>% 
               left_join(grps %>% 
                           dplyr::select(Code, Name))) %>%
-  mutate(mt_ak = mt * ak_prop)
+  mutate(mt_ak = mean_catch * ak_prop)
 
 # add scenario information
 catch_df_long_ak <- catch_df_long_ak %>%
@@ -538,19 +402,148 @@ max_catch <- catch_df_long_ak %>%
   slice_max(total_yield_ak)
 
 # Figure 4. Biomass and catch curves ------------------------------------------------
+# extract biomass and catch from the multispecies runs, i.e. Step 2
+ms_yield_list <- list()
+
+for(i in 1:length(f35_results)){
+
+  print(paste("Doing", f35_results[i]))
+
+  # grab the index from the file name
+  this_idx <- as.numeric(gsub("-result.rds", "", gsub("results/ms/flat_results/", "", f35_results[i])))
+
+  # run information based on the index
+  this_run <- oy_key %>% filter(idx == this_idx) %>% pull(run)
+  this_mult <- oy_key %>% filter(idx == this_idx) %>% pull(mult)
+
+  # extract tables from results
+  this_result <- readRDS(f35_results[i])
+  # the packaging of the RDS object was different between the eScience runs and the batch (doAzureParallel) runs
+  if(length(this_result)==1) {
+    this_result <- this_result[[1]]
+  }
+
+  biomage <- this_result[[2]]
+  catch <- this_result[[3]]
+  mort <- this_result[[4]]
+
+  # now extract data
+  # SSB to plot and report in tables
+  spawning_biomass <- biomage %>%
+    pivot_longer(-Time, names_to = 'Code.Age', values_to = 'biomass_mt') %>%
+    separate(Code.Age, into = c('Code', 'Age'), sep = '\\.') %>%
+    filter(Code %in% t3_fg) %>%
+    left_join(fspb, by = c('Code','Age')) %>%
+    mutate(biomass_mt = biomass_mt * fspb) %>%
+    group_by(Time,Code) %>%
+    summarise(biomass_mt = sum(biomass_mt)) %>%
+    group_by(Code) %>%
+    slice_max(Time, n = 5) %>%
+    summarise(mean_biom = mean(biomass_mt),
+              biom_cv = sd(biomass_mt) / mean(biomass_mt))
+
+  # total catch
+  # taking mean of the last 5 years
+  catch_vals <- catch %>%
+    dplyr::select(c(Time, all_of(t3_fg))) %>%
+    pivot_longer(-Time, names_to = "Code", values_to = "catch_mt") %>%
+    group_by(Code) %>%
+    slice_max(Time, n = 5) %>%
+    summarise(mean_catch = mean(catch_mt),
+              catch_cv = sd(catch_mt) / mean(catch_mt))
+
+  # # calculate realized F after 1 year of data
+  # For runs with a burn-in, this has to be the biomass at the end of the burn-in, when we start fishing with the new scalar
+  # # get initial biomass for the selected age classes
+  biom_age_t1 <- biomage %>%
+    filter(Time == 365 * burnin) %>%# this is the burn-in years
+    pivot_longer(-Time, names_to = 'Code.Age', values_to = 'biomass') %>%
+    separate(Code.Age, into = c('Code', 'Age'), sep = '\\.') %>%
+    left_join(selex, by = 'Code') %>%
+    mutate(idx = as.numeric(Age) - as.numeric(age_class_selex)) %>%
+    filter(is.na(idx) | idx >= 0) %>%
+    group_by(Code) %>%
+    summarise(biomass = sum(biomass)) %>%
+    ungroup() %>%
+    filter(Code %in% t3_fg)
+  #
+  # # catch (one time step after biomass: how much did we catch in this time?)
+  catch_t1 <- catch %>%
+    select(Time, all_of(t3_fg)) %>%
+    filter(Time == 365 * (burnin + 1)) %>% # careful - there is a small transition phase
+    summarise(across(everything(), ~ mean(.x, na.rm = TRUE))) %>%
+    pivot_longer(-Time, names_to = 'Code', values_to = 'catch') %>%
+    select(-Time)
+  #
+  # # calc realized f
+  f_t1 <- biom_age_t1 %>% left_join(catch_t1, by = "Code") %>%
+    mutate(exp_rate = catch/biomass,
+           f = -log(1-exp_rate)) %>%#,
+    select(Code, f)#, fidx)
+
+  # # bind all
+  f_frame <- f_t1 %>%
+    left_join(spawning_biomass) %>%
+    left_join(catch_vals) %>%
+    mutate(run = this_run,
+           mult = this_mult)
+
+  # reshape
+  f_frame <- f_frame %>%
+    pivot_longer(
+      cols = c(mean_biom, mean_catch, biom_cv, catch_cv),
+      names_to = "temp",
+      values_to = "value"
+    ) %>%
+    mutate(
+      Var = case_when(
+        temp == "mean_biom" ~ "Biomass",
+        temp == "mean_catch" ~ "Catch",
+        temp == "biom_cv" ~ "Biomass",
+        temp == "catch_cv" ~ "Catch"
+      ),
+      type = ifelse(grepl("mean", temp), "Mean", "CV")
+    ) %>%
+    select(-temp) %>%
+    pivot_wider(
+      names_from = type,
+      values_from = value
+    ) %>%
+    select(Code, f, run, mult, Var, Mean, CV) %>%
+    left_join(grps %>% select(Code, LongName), by = 'Code')
+
+  # add to multispecies yield list
+  ms_yield_list[[i]] <- f_frame
+}
+
+ms_yield_df <- bind_rows(ms_yield_list)
+
+# Reference points, we will use these for the plots
+# get two data frames: one for b0 and one for maximum yield
+# b0 - fixed to base conditions
+b0 <- ms_yield_df %>% filter(mult == 0, Var == "Biomass", run == "base") %>% dplyr::select(LongName, Mean) %>% rename(b0 = Mean)
+
+# max yield
+ymax_ms <- ms_yield_df %>%
+  filter(Var == "Catch") %>%
+  group_by(LongName, run) %>%
+  slice_max(Mean) %>%
+  ungroup() %>%
+  dplyr::select(LongName, run, Mean, f) %>%
+  rename(ymax = Mean)
+
+ymax <- ymax_ms
+
+# handle the NaN's from FHS
+ms_yield_df <- as.data.frame(ms_yield_df)
+ms_yield_df$f[is.nan(ms_yield_df$f)] <- NA
+
 # plot catch and biomass curves
 to_plot <- ms_yield_df
-
-# get table of CVs
-cv_ms <- to_plot %>%
-  filter(mult == 1) %>%
-  dplyr::select(LongName,run,Var,CV) %>%
-  pivot_wider(names_from = Var, values_from = CV)
 
 # spaces
 to_plot$LongNamePlot <- gsub(" ", "\n", to_plot$LongName)
 ymax$LongNamePlot <- gsub(" ", "\n", ymax$LongName)
-ymax$type <- "Catch"
 
 # rename scenarios and order them
 to_plot <- to_plot %>%
@@ -579,10 +572,6 @@ f_plot_ms <- to_plot %>%
   filter(LongName %in% key_grps, Var == "Catch") %>%
   ggplot(aes(x = f, y = Mean/1000, color = Climate, linetype = Fishing))+
   geom_line(linewidth = 1)+
-  # geom_point(size = 1.6)+
-  # geom_errorbar(aes(ymin = Mean/1000 - (Mean/1000 * CV),
-  #                   ymax = Mean/1000 + (Mean/1000 * CV)),
-  #               width = 0.01)+
   scale_color_viridis_d(begin = 0.2, end = 0.8)+
   geom_vline(data = ymax %>% 
                filter(LongName %in% key_grps) %>% 
@@ -598,26 +587,6 @@ f_plot_ms
 
 #ggsave(paste0('results/figures/catch',t,'_MS_ms.png'), f_plot_ms, width = 6, height = 6)
 
-# POL and COD for AMSS
-# amss_plot <- to_plot %>%
-#   filter(Code %in% c("POL","COD"), type == "Catch") %>%
-#   ggplot(aes(x = f, y = mt/1000, color = Climate, linetype = Fishing))+
-#   geom_line(linewidth = 1)+
-#   # geom_point(size = 1.6)+
-#   scale_color_viridis_d(begin = 0.2, end = 0.8)+
-#   geom_vline(data = ymax %>% 
-#                filter(LongName %in% c("Walleye pollock","Pacific cod")) %>% 
-#                filter(!(LongNamePlot == "Arrowtooth\nflounder" & Fishing == "Arrowtooth\nunderexploitation")), 
-#              aes(xintercept = f, color = Climate, linetype = Fishing))+
-#   theme_bw()+
-#   scale_y_continuous(limits = c(0, NA))+
-#   labs(x = 'Fishing mortality (F)', y = 'Catch (1000 mt)')+
-#   facet_grid2(LongNamePlot~type, scales = 'free', independent = 'all')+
-#   #facet_wrap(~ LongName, scales = "free", ncol = 1)+
-#   theme(strip.text.y = element_text(angle=0))
-# amss_plot
-# ggsave("amss_catch.png",amss_plot,width=5,height = 5.5)
-
 # make figures for supplement (break into two sets)
 grp1 <- unique(to_plot$LongNamePlot)[1:6]
 f_plot1 <- to_plot %>%
@@ -625,10 +594,6 @@ f_plot1 <- to_plot %>%
   filter(Var == "Catch") %>%
   ggplot(aes(x = f, y = Mean/1000, color = Climate, linetype = Fishing))+
   geom_line(linewidth = 1)+
-  # geom_point(size = 1.6)+
-  # geom_errorbar(aes(ymin = Mean/1000 - (Mean/1000 * CV),
-  #                   ymax = Mean/1000 + (Mean/1000 * CV)),
-  #               width = 0.01)+
   scale_color_viridis_d(begin = 0.2, end = 0.8)+
   geom_vline(data = ymax %>% filter(LongNamePlot %in% grp1), aes(xintercept = f, color = Climate, linetype = Fishing))+
   theme_bw()+
@@ -644,10 +609,6 @@ f_plot2 <- to_plot %>%
   filter(Var == "Catch") %>%
   ggplot(aes(x = f, y = Mean/1000, color = Climate, linetype = Fishing))+
   geom_line(linewidth = 1)+
-  # geom_point(size = 1.6)+
-  # geom_errorbar(aes(ymin = Mean/1000 - (Mean/1000 * CV),
-  #                   ymax = Mean/1000 + (Mean/1000 * CV)),
-  #               width = 0.01)+
   scale_color_viridis_d(begin = 0.2, end = 0.8)+
   geom_vline(data = ymax %>% filter(LongNamePlot %in% grp2), aes(xintercept = f, color = Climate, linetype = Fishing))+
   theme_bw()+
@@ -659,6 +620,39 @@ f_plot2
 
 #ggsave(paste0('results/figures/biomass_catch',t,'_MS_1.png'), f_plot1, width = 7.5, height = 7)
 #ggsave(paste0('results/figures/biomass_catch',t,'_MS_2.png'), f_plot2, width = 7.5, height = 7)
+
+####################################
+# Analysis of end-of-run variability
+####################################
+cv_df <- to_plot %>%
+  dplyr::select(LongName, Fishing, Climate, mult, Var, CV)
+
+cv_p1 <- cv_df %>%
+  #filter(mult > 0) %>%
+  ggplot()+
+  geom_boxplot(aes(x = mult, y = CV, group = interaction(mult,Var), fill = Var, color = Var), alpha = 0.7)+
+  scale_x_continuous(breaks = seq(0,4,0.5))+
+  scale_fill_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
+  scale_color_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
+  theme_bw()+
+  labs(x = expression(MF[MSY] ~ "multiplier"), y = "CV", fill = "") +
+  guides(color = "none")+
+  facet_grid(Climate~Fishing)
+cv_p1
+#ggsave("results/figures/cv_p1.png", cv_p1, width = 7, height = 4.5)
+
+# and by species
+cv_p2 <- cv_df %>%
+  filter(Var == "Biomass") %>%
+  ggplot()+
+  geom_boxplot(aes(x = LongName, y = CV, fill = factor(mult)), linewidth = 0.2)+
+  scale_fill_viridis_d(option = "inferno", begin = 0.1, end = 0.9)+
+  scale_color_viridis_d(option = "inferno", begin = 0.1, end = 0.9)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  labs(x = "", y = "CV", fill = expression(MF[MSY] ~ "multiplier"))
+cv_p2
+#ggsave("results/figures/cv_p2.png", cv_p2, width = 8, height = 5)
 
 # Figures 5 and 6: top predators and forage fish ------------------------------
 
@@ -691,16 +685,15 @@ for(i in 1:length(f35_results)){
   # now extract data
   # SSB to plot and report in tables
   other_biomass <- biomage %>% 
-    slice_tail(n = 5) %>% # use last xxx years
-    summarise(across(-"Time", ~ mean(.x, na.rm = TRUE))) %>%
-    ungroup() %>%
-    pivot_longer(everything(), names_to = 'Code.Age', values_to = 'biomass_mt') %>%
-    # separate_wider_delim(Code.Age, delim = '.', names = c('Code', 'Age')) %>%
+    pivot_longer(-Time, names_to = 'Code.Age', values_to = 'biomass_mt') %>%
     separate(Code.Age, into = c('Code', 'Age'), sep = '\\.') %>%
     filter(Code %in% other_fg) %>%
-    group_by(Code) %>%
+    group_by(Time, Code) %>%
     summarise(biomass_mt = sum(biomass_mt)) %>%
-    ungroup() %>%
+    group_by(Code) %>%
+    slice_max(Time, n = 5) %>%
+    summarise(mean_biom = mean(biomass_mt),
+              biom_cv = sd(biomass_mt) / mean(biomass_mt)) %>%
     mutate(run = this_run,
            mult = this_mult)
   
@@ -713,11 +706,11 @@ ms_other_df <- bind_rows(ms_other_list) %>%
 
 # get b0
 # static to "base"
-b0_other <- ms_other_df %>% filter(mult == 0, run == "base") %>% dplyr::select(LongName, biomass_mt) %>% rename(b0 = biomass_mt)
+b0_other <- ms_other_df %>% filter(mult == 0, run == "base") %>% dplyr::select(LongName, mean_biom) %>% rename(b0 = mean_biom)
 
 ms_other_df <- ms_other_df %>%
   left_join(b0_other, by = c("LongName")) %>%
-  mutate(biomchange = (biomass_mt - b0)/b0 * 100)
+  mutate(biomchange = (mean_biom - b0)/b0 * 100)
 
 # add factors for plot
 ms_other_df <- ms_other_df %>%
@@ -751,13 +744,40 @@ ms_other_df$LongNamePlot <- factor(ms_other_df$LongNamePlot, levels = c(
   "Eulachon"
 ))
 
+####################################
+# Analysis of end-of-run variability
+####################################
+cv_df_other <- ms_other_df %>%
+  dplyr::select(Code, LongName, Fishing, Climate, mult, biom_cv)
+
+# split forage from top predators
+cv_df_other <- cv_df_other %>%
+  mutate(Guild = case_when(
+    Code %in% top_preds ~ "Predator",
+    TRUE ~ "Forage"
+  ))
+
+cv_p3 <- cv_df_other %>%
+  #filter(mult > 0) %>%
+  ggplot()+
+  geom_boxplot(aes(x = mult, y = biom_cv, group = interaction(mult,Guild), fill = Guild, color = Guild), alpha = 0.7)+
+  scale_x_continuous(breaks = seq(0,4,0.5))+
+  scale_fill_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
+  scale_color_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
+  theme_bw()+
+  labs(x = expression(MF[MSY] ~ "multiplier"), y = "CV", fill = "") +
+  guides(color = "none")+
+  facet_grid(Climate~Fishing)
+cv_p3
+#ggsave("results/figures/cv_p3.png", cv_p3, width = 7, height = 4.5)
+
 # for each predator, identify the main prey species from dietcheck (in baseline)
 # sum up total prey biomass
 # express changes from B0
 # This is qualitative, but it demonstrate a likely trophic link and its effects
 
-# use run 1556 as base model
-base_diet <- read.table("data/output_1556DietCheck.txt", sep = " ", header = T)
+# read in diet comps for the base model and get the last 5 years
+base_diet <- read.table("results/diets/Base_DietCheck.txt", sep = " ", header = T)
 
 # put in long format
 diet_long_other <- base_diet %>%
@@ -814,7 +834,7 @@ predator_per_prey <- bind_rows(predator_per_prey)
 preds_and_prey <- c(top_pred_names, forage_names)
 
 diet_biomass <- lapply(1:length(preds_and_prey), function(i) {
-  # Create an inner list of length X
+  # Create an inner list
   rep(list(NULL), length(f35_results))
 })
 
@@ -828,10 +848,10 @@ for(i in 1:length(preds_and_prey)){
     diet_grps <- predator_per_prey %>% filter(Prey == this_sp) %>% pull(Predator)
   }
   
-  # bring in codes again as that's what the output works with...
+  # bring in codes again as that's what the output works with
   diet_codes <- grps %>% filter(Name %in% diet_grps) %>% pull(Code)
   
-  # now loop over reuslts
+  # now loop over results
   for(j in 1:length(f35_results)){
     
     print(paste("Doing", f35_results[j]))
@@ -853,9 +873,10 @@ for(i in 1:length(preds_and_prey)){
     biomage <- this_result[[2]]
     
     # now extract data
+    # not bothering with the CV here
     # SSB to plot and report in tables
     this_diet_biomass <- biomage %>% 
-      slice_tail(n = 5) %>% # use last xxx years
+      slice_tail(n = 5) %>% # use last 5 years
       summarise(across(-"Time", ~ mean(.x, na.rm = TRUE))) %>%
       ungroup() %>%
       pivot_longer(everything(), names_to = 'Code.Age', values_to = 'biomass_mt') %>%
@@ -877,7 +898,7 @@ for(i in 1:length(preds_and_prey)){
 
 diet_biomass <- bind_rows(diet_biomass)
 
-# now need to rescale to b0, where b0 is for each scenario
+# now need to rescale to b0 of the respective scenarios
 b0_for_diets <- diet_biomass %>% filter(mult == 0) %>% dplyr::select(Name, run, biomass_of_prey_or_pred) %>% rename(b0 = biomass_of_prey_or_pred)
 
 diet_biomass_scalars <- diet_biomass %>%
@@ -890,27 +911,13 @@ diet_biomass_scalars <- diet_biomass %>%
 diet_biomass_scalars$LongName <- gsub(" - ", " ", diet_biomass_scalars$LongName)
 
 # now join this to the ms_other_df frame
-
 ms_other_df_diet <- ms_other_df %>%
   left_join(diet_biomass_scalars, by = c("LongName","run","mult"))
 
 # now plot
-other_plot_top_diets <- ms_other_df_diet %>%
-  filter(Code %in% c("DOL","SSL","PIN","BDF","BSF")) %>%
-  ggplot(aes(x = mult, y = biomass_mt / 1000, fill = scalar, shape = Fishing))+
-  geom_point(color = "black", size = 1.5)+
-  scale_shape_manual(values = c(21,24))+
-  colorspace::scale_fill_continuous_divergingx(palette = 'PRGn', mid = 0) + 
-  geom_vline(xintercept = 1, color = 'black', linetype = "dashed", linewidth = 0.35)+
-  theme_bw()+
-  labs(x = expression(MF[MSY] ~ "multiplier"), y = "Biomass (1000 mt)", fill = "Change in total prey\nbiomass from unfished (%)")+
-  #guides(fill=guide_legend(order=1), shape=guide_legend(order=2))+
-  facet_grid2(LongNamePlot~Climate, scales = 'free')+
-  theme(strip.text.y = element_text(angle=0))
-
 other_plot_forage_diets <- ms_other_df_diet %>%
   filter(Code %in% c("CAP","SAN","HER","FOS","EUL")) %>%
-  ggplot(aes(x = mult, y = biomass_mt / 1000, fill = scalar, shape = Fishing))+
+  ggplot(aes(x = mult, y = mean_biom / 1000, fill = scalar, shape = Fishing))+
   geom_point(color = "black", size = 1.5)+
   scale_shape_manual(values = c(21,24))+
   colorspace::scale_fill_continuous_divergingx(palette = 'PRGn', mid = 0) + 
@@ -920,9 +927,24 @@ other_plot_forage_diets <- ms_other_df_diet %>%
   #guides(fill=guide_legend(order=1), shape=guide_legend(order=2))+
   facet_grid2(LongNamePlot~Climate, scales = 'free')+
   theme(strip.text.y = element_text(angle=0))
+other_plot_forage_diets
 
-#ggsave(paste0("results/figures/other_top_diets.png"), other_plot_top_diets, width = 7, height = 4.05)
+other_plot_top_diets <- ms_other_df_diet %>%
+  filter(Code %in% c("DOL","SSL","PIN","BDF","BSF")) %>%
+  ggplot(aes(x = mult, y = mean_biom / 1000, fill = scalar, shape = Fishing))+
+  geom_point(color = "black", size = 1.5)+
+  scale_shape_manual(values = c(21,24))+
+  colorspace::scale_fill_continuous_divergingx(palette = 'PRGn', mid = 0) + 
+  geom_vline(xintercept = 1, color = 'black', linetype = "dashed", linewidth = 0.35)+
+  theme_bw()+
+  labs(x = expression(MF[MSY] ~ "multiplier"), y = "Biomass (1000 mt)", fill = "Change in total prey\nbiomass from unfished (%)")+
+  #guides(fill=guide_legend(order=1), shape=guide_legend(order=2))+
+  facet_grid2(LongNamePlot~Climate, scales = 'free')+
+  theme(strip.text.y = element_text(angle=0))
+other_plot_top_diets
+
 #ggsave(paste0("results/figures/other_forage_diets.png"), other_plot_forage_diets, width = 7, height = 4.05)
+#ggsave(paste0("results/figures/other_top_diets.png"), other_plot_top_diets, width = 7, height = 4.05)
 
 #########################
 # SUPPLEMENTARY FIGURES #
