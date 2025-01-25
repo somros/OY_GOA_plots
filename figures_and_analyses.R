@@ -1110,7 +1110,9 @@ atf_diet <- diet_long_preds %>%
   drop_na()
 
 colourCount <- length(unique(atf_diet$Prey_Name))
-getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+colors <- c(viridis(11)[2:10], inferno(11)[2:10])#, cividis(6))
+
+#getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
 
 # plot across scenarios (except Base model)
 p_atf_diet <- atf_diet %>%
@@ -1118,10 +1120,10 @@ p_atf_diet <- atf_diet %>%
   ggplot(aes(x = Cohort+1, y = Prop * 100, fill = Prey_LongName))+
   geom_bar(stat = 'identity', position = 'stack')+
   scale_x_continuous(breaks = 1:10)+
-  scale_fill_manual(values = getPalette(colourCount))+
+  scale_fill_manual(values = colors)+
   theme_bw()+
   labs(x = '', y = "Diet preference (%)", fill = "Prey")+
-  facet_grid(~run)
+  facet_wrap(~run)
 p_atf_diet
 ggsave("results/figures/diet_plots/ATF_diet_S3.png", p_atf_diet, width = 9, height = 5)
 
@@ -1131,7 +1133,7 @@ p_atf_diet_base <- atf_diet %>%
   ggplot(aes(x = Cohort+1, y = Prop * 100, fill = Prey_LongName))+
   geom_bar(stat = 'identity', position = 'stack')+
   scale_x_continuous(breaks = 1:10)+
-  scale_fill_manual(values = getPalette(colourCount))+
+  scale_fill_manual(values = colors)+
   theme_bw()+
   labs(x = '', y = "Diet preference (%)", fill = "Prey")
 p_atf_diet_base
