@@ -15,6 +15,7 @@ library(tidync)
 library(ncdf4)
 library(rbgm)
 library(RColorBrewer)
+library(patchwork)
 
 # general settings
 t <- format(Sys.time(),'%Y-%m-%d %H-%M-%S') # set the clock to date plots
@@ -632,20 +633,30 @@ cv_p1 <- cv_df %>%
   guides(color = "none")+
   facet_grid(Climate~Fishing)
 cv_p1
-#ggsave("results/figures/cv_p1.png", cv_p1, width = 7, height = 4.5)
+#ggsave("results/figures/cv_p_ms_1.png", cv_p1, width = 7, height = 4.5)
 
 # and by species
 cv_p2 <- cv_df %>%
   filter(Var == "Biomass") %>%
-  ggplot()+
-  geom_boxplot(aes(x = LongName, y = CV, fill = factor(mult)), linewidth = 0.2)+
-  scale_fill_viridis_d(option = "inferno", begin = 0.1, end = 0.9)+
+  ggplot(aes(x = LongName, y = CV, group = factor(mult), color =factor(mult)))+
+  stat_summary(fun.data = "median_hilow", 
+               geom = "pointrange",
+               position = position_dodge(width = 0.75),
+               size = 0.3) +
   scale_color_viridis_d(option = "inferno", begin = 0.1, end = 0.9)+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))+
-  labs(x = "", y = "CV", fill = expression(MF[MSY] ~ "multiplier"))
+  labs(x = "", y = "CV", color = expression(atop(MF[MSY], "multiplier")))
 cv_p2
-#ggsave("results/figures/cv_p2.png", cv_p2, width = 8, height = 5)
+
+#ggsave("results/figures/cv_p_ms_2.png", cv_p2, width = 8, height = 5)
+
+cv_combo <- cv_p1 / cv_p2 + # Stack plots vertically
+  plot_layout(heights = c(1.75, 1)) +  # 2:1 ratio between plots
+  plot_annotation(tag_levels = 'A') # Add letters A, B
+
+# Save the combined plot
+ggsave("results/figures/cv_p_ms.png", cv_combo, height = 8.5, width = 8, dpi = 600)
 
 # Figures 5 and 6: top predators and forage fish ------------------------------
 
@@ -1145,7 +1156,7 @@ hal_diet <- diet_long_preds %>%
   drop_na()
 
 colourCount <- length(unique(hal_diet$Prey_Name))
-getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+colors <- c(viridis(9)[2:8], inferno(8)[2:7])#, cividis(6))
 
 # plot Base diets for Halibut
 p_hal_diet <- hal_diet %>%
@@ -1153,10 +1164,9 @@ p_hal_diet <- hal_diet %>%
   ggplot(aes(x = Cohort+1, y = Prop * 100, fill = Prey_LongName))+
   geom_bar(stat = 'identity', position = 'stack')+
   scale_x_continuous(breaks = 1:10)+
-  scale_fill_manual(values = getPalette(colourCount))+
+  scale_fill_manual(values = colors)+
   theme_bw()+
-  labs(x = '', y = "Diet preference (%)", fill = "Prey")+
-  facet_grid(~run)
+  labs(x = '', y = "Diet preference (%)", fill = "Prey")
 p_hal_diet
 ggsave("results/figures/diet_plots/HAL_diet_S3_Base.png", p_hal_diet, width = 6, height = 5)
 
