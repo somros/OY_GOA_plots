@@ -1139,7 +1139,7 @@ p_atf_diet <- atf_diet %>%
   labs(x = '', y = "Diet preference (%)", fill = "Prey")+
   facet_wrap(~run)
 p_atf_diet
-ggsave("results/figures/diet_plots/ATF_diet_S3.png", p_atf_diet, width = 9, height = 5)
+ggsave("results/figures/diet_plots/ATF_diet_S3.png", p_atf_diet, width = 8, height = 6)
 
 # plot ATF in the base model only (Fig. S1.3)
 p_atf_diet_base <- atf_diet %>%
@@ -1182,13 +1182,13 @@ diet_long_preds <- diet_long_preds %>%
 diet_long_preds$Predator_LongNamePlot <- gsub(" ", "\n", diet_long_preds$Predator_LongName)
 
 colourCount <- length(unique(diet_long_preds$Prey_Name))
-getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+colors <- c(viridis(8)[2:8], inferno(8)[2:8])#, cividis(6))
 
 p_all_diet <- diet_long_preds %>%
   ggplot(aes(x = Cohort+1, y = Prop * 100, fill = Prey_LongName))+
   geom_bar(stat = 'identity', position = 'stack')+
   scale_x_continuous(breaks = 1:10)+
-  scale_fill_manual(values = getPalette(colourCount))+
+  scale_fill_manual(values = colors)+
   theme_bw()+
   labs(x = 'Age class', y = "Diet composition (%)", fill = "Prey")+
   theme(legend.position="bottom",
@@ -1198,7 +1198,7 @@ p_all_diet <- diet_long_preds %>%
   theme(strip.text.y = element_text(angle=0))
 p_all_diet
 
-#ggsave("results/figures/diet_plots/all_S10.png", p_all_diet, width = 8.5, height = 6)
+ggsave("results/figures/diet_plots/all_S10.png", p_all_diet, width = 8.5, height = 6)
 
 # Production curves S1.5 --------------------------------------------------
 # These refer to the single-species runs in Step 1
