@@ -616,6 +616,48 @@ f_plot2
 #ggsave(paste0('results/figures/biomass_catch',t,'_MS_1.png'), f_plot1, width = 7.5, height = 7)
 #ggsave(paste0('results/figures/biomass_catch',t,'_MS_2.png'), f_plot2, width = 7.5, height = 7)
 
+##################
+###AMSS
+## DELETE AFTER CONFERENCE
+f_plot_amss <- to_plot %>%
+  filter(LongName %in% key_grps, Var == "Catch") %>%
+  filter(LongName != "Pacific halibut") %>%
+  ggplot(aes(x = f, y = Mean/1000, color = Climate, linetype = Fishing))+
+  geom_line(linewidth = 1)+
+  scale_color_manual(values = c("#4477AA", "#EE6677"))+
+  # geom_vline(data = ymax %>% 
+  #              filter(LongName %in% key_grps) %>% 
+  #              filter(!(LongNamePlot == "Arrowtooth\nflounder" & Fishing == "Arrowtooth\nunderexploitation")), 
+  #            aes(xintercept = f, color = Climate, linetype = Fishing))+
+  theme_bw()+
+  scale_y_continuous(limits = c(0, NA))+
+  labs(x = 'Fishing mortality (F)', y = 'Catch (1000 mt)')+
+  facet_grid2(LongNamePlot~Var, scales = 'free', independent = 'all')+
+  #facet_wrap(~ LongName, scales = "free", ncol = 1)+
+  theme(strip.text.y = element_text(angle=0))
+f_plot_amss
+#ggsave(paste0('results/figures/catch_AMSS.png'), f_plot_amss, width = 6, height = 6)
+
+f_plot_amss_PC <- to_plot %>%
+  filter(LongName %in% key_grps, Var == "Catch") %>%
+  filter(LongName %in% c("Walleye pollock", "Pacific cod")) %>%
+  ggplot(aes(x = f, y = Mean/1000, color = Climate, linetype = Fishing))+
+  geom_line(linewidth = 1.5)+
+  scale_color_manual(values = c("#4477AA", "#EE6677"))+
+  # geom_vline(data = ymax %>% 
+  #              filter(LongName %in% key_grps) %>% 
+  #              filter(!(LongNamePlot == "Arrowtooth\nflounder" & Fishing == "Arrowtooth\nunderexploitation")), 
+  #            aes(xintercept = f, color = Climate, linetype = Fishing))+
+  theme_bw()+
+  scale_y_continuous(limits = c(0, NA))+
+  labs(x = 'Fishing mortality (F)', y = 'Catch (1000 mt)')+
+  facet_grid2(LongNamePlot~Var, scales = 'free', independent = 'all')+
+  #facet_wrap(~ LongName, scales = "free", ncol = 1)+
+  theme(strip.text.y = element_text(angle=0))
+f_plot_amss_PC
+ggsave(paste0('results/figures/catch_AMSS_PC.png'), f_plot_amss_PC, width = 6, height = 6)
+
+
 ####################################
 # Analysis of end-of-run variability
 ####################################
