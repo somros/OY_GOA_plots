@@ -401,27 +401,27 @@ max_catch <- catch_df_long_ak %>%
 ms_yield_list <- list()
 
 for(i in 1:length(f35_results)){
-
+  
   print(paste("Doing", f35_results[i]))
-
+  
   # grab the index from the file name
   this_idx <- as.numeric(gsub("-result.rds", "", gsub("results/ms/flat_results/", "", f35_results[i])))
-
+  
   # run information based on the index
   this_run <- oy_key %>% filter(idx == this_idx) %>% pull(run)
   this_mult <- oy_key %>% filter(idx == this_idx) %>% pull(mult)
-
+  
   # extract tables from results
   this_result <- readRDS(f35_results[i])
   # the packaging of the RDS object was different between the eScience runs and the batch (doAzureParallel) runs
   if(length(this_result)==1) {
     this_result <- this_result[[1]]
   }
-
+  
   biomage <- this_result[[2]]
   catch <- this_result[[3]]
   mort <- this_result[[4]]
-
+  
   # now extract data
   # SSB to plot and report in tables
   spawning_biomass <- biomage %>%
@@ -436,7 +436,7 @@ for(i in 1:length(f35_results)){
     slice_max(Time, n = 5) %>%
     summarise(mean_biom = mean(biomass_mt),
               biom_cv = sd(biomass_mt) / mean(biomass_mt))
-
+  
   # total catch
   # taking mean of the last 5 years
   catch_vals <- catch %>%
@@ -446,7 +446,7 @@ for(i in 1:length(f35_results)){
     slice_max(Time, n = 5) %>%
     summarise(mean_catch = mean(catch_mt),
               catch_cv = sd(catch_mt) / mean(catch_mt))
-
+  
   # # calculate realized F after 1 year of data
   # For runs with a burn-in, this has to be the biomass at the end of the burn-in, when we start fishing with the new scalar
   # # get initial biomass for the selected age classes
@@ -475,14 +475,14 @@ for(i in 1:length(f35_results)){
     mutate(exp_rate = catch/biomass,
            f = -log(1-exp_rate)) %>%#,
     select(Code, f)#, fidx)
-
+  
   # # bind all
   f_frame <- f_t1 %>%
     left_join(spawning_biomass) %>%
     left_join(catch_vals) %>%
     mutate(run = this_run,
            mult = this_mult)
-
+  
   # reshape
   f_frame <- f_frame %>%
     pivot_longer(
@@ -506,7 +506,7 @@ for(i in 1:length(f35_results)){
     ) %>%
     select(Code, f, run, mult, Var, Mean, CV) %>%
     left_join(grps %>% select(Code, LongName), by = 'Code')
-
+  
   # add to multispecies yield list
   ms_yield_list[[i]] <- f_frame
 }
@@ -639,10 +639,12 @@ cv_p1
 cv_p2 <- cv_df %>%
   filter(Var == "Biomass") %>%
   ggplot(aes(x = LongName, y = CV, group = factor(mult), color =factor(mult)))+
-  stat_summary(fun.data = "median_hilow", 
-               geom = "pointrange",
-               position = position_dodge(width = 0.75),
-               size = 0.3) +
+  stat_summary(fun.data = function(x) {
+    return(c(y = mean(x), ymin = min(x), ymax = max(x)))
+  }, 
+  geom = "pointrange",
+  position = position_dodge(width = 0.75),
+  size = 0.3) +
   scale_color_viridis_d(option = "inferno", begin = 0.1, end = 0.9)+
   theme_bw()+
   guides(color = guide_legend(ncol = 2))+
