@@ -776,7 +776,7 @@ cv_p3 <- cv_df_other %>%
   guides(color = "none")+
   facet_grid(Climate~Fishing)
 cv_p3
-#ggsave("results/figures/cv_p3.png", cv_p3, width = 7, height = 4.5)
+# ggsave("results/figures/cv_p_other.png", cv_p3, width = 7, height = 4.5)
 
 # for each predator, identify the main prey species from dietcheck (in baseline)
 # sum up total prey biomass
