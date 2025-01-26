@@ -645,14 +645,15 @@ cv_p2 <- cv_df %>%
                size = 0.3) +
   scale_color_viridis_d(option = "inferno", begin = 0.1, end = 0.9)+
   theme_bw()+
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  guides(color = guide_legend(ncol = 2))+
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))+
   labs(x = "", y = "CV", color = expression(atop(MF[MSY], "multiplier")))
 cv_p2
 
 #ggsave("results/figures/cv_p_ms_2.png", cv_p2, width = 8, height = 5)
 
-cv_combo <- cv_p1 / cv_p2 + # Stack plots vertically
-  plot_layout(heights = c(1.75, 1)) +  # 2:1 ratio between plots
+cv_combo <- cv_p2 / cv_p1 + # Stack plots vertically
+  plot_layout(heights = c(1, 1.5)) +  # 2:1 ratio between plots
   plot_annotation(tag_levels = 'A') # Add letters A, B
 
 # Save the combined plot
