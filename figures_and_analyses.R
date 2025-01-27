@@ -655,7 +655,7 @@ f_plot_amss_PC <- to_plot %>%
   #facet_wrap(~ LongName, scales = "free", ncol = 1)+
   theme(strip.text.y = element_text(angle=0))
 f_plot_amss_PC
-ggsave(paste0('results/figures/catch_AMSS_PC.png'), f_plot_amss_PC, width = 6, height = 6)
+ggsave(paste0('results/figures/catch_AMSS_PC.png'), f_plot_amss_PC, width = 5, height = 5)
 
 
 ####################################
@@ -1619,3 +1619,166 @@ paa_plot2
 # make a figure
 # ggsave(paste0('results/figures/paa_1.png'), paa_plot1, width = 7, height = 7)
 # ggsave(paste0('results/figures/paa_2.png'), paa_plot2, width = 7, height = 7)
+
+# Biomass and catch ratio of focal grps vs total groundfish ---------------
+# This is to address comments from R2
+# TODO: find a good place for it
+
+# start from the base model (modified from Rovellini et al. 2024)
+biom_base <- read.table("data/base_model_results/outputBiomIndx.txt", sep = " ", header = T)
+biom_base <- biom_base %>%
+  select(Time:DR) %>%
+  pivot_longer(-Time, names_to = "Code", values_to = "mt")
+
+# all fmp groups plus HAL
+all_fmp <- c("SHD", "SHP", "DOG", "POL", "COD", "ATF", "HAL", "FHS", "REX", "FFS", "FFD", "SKL", "SKB", "SKO", "SBF", "POP", "RFS", "RFP", "RFD", "THO", "DFS", "DFD", "SCU", "OCT", "SQD")
+
+biom_fmp <- biom_base %>%
+  filter(Code %in% all_fmp) %>%
+  filter(Code != "HAL") %>%
+  mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0))
+
+# now proportion of is focal biomass over time
+biom_fmp %>%
+  group_by(Code) %>%
+  slice_max(Time, n = 5) %>% # last 5 years
+  group_by(Time, is_focal) %>%
+  summarise(by_focal = sum(mt)) %>%
+  group_by(Time) %>%
+  mutate(tot = sum(by_focal)) %>%
+  ungroup() %>%
+  mutate(prop_focal = by_focal / tot) %>%
+  filter(is_focal == 1)
+# ~60% of the biomass in base run is from the focal groups, slowly declining
+
+# now catch
+catch_base <- read.table("data/base_model_results/outputCatch.txt", sep = " ", header = T)
+catch_base <- catch_base %>%
+  select(Time:BIV) %>%
+  pivot_longer(-Time, names_to = "Code", values_to = "mt")
+
+catch_fmp <- catch_base %>%
+  filter(Code %in% all_fmp) %>%
+  filter(Code != "HAL") %>%
+  mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0))
+
+catch_fmp %>%
+  group_by(Code) %>%
+  slice_max(Time, n = 5) %>%
+  group_by(Time, is_focal) %>%
+  summarise(by_focal = sum(mt)) %>%
+  group_by(Time) %>%
+  mutate(tot = sum(by_focal)) %>%
+  ungroup() %>%
+  mutate(prop_focal = by_focal / tot) %>%
+  filter(is_focal == 1)
+# >90% of the catch is from the focal groups, fairly stable
+
+# now do the same for the MS runs from step 2
+# this has the purpose of showing the relation between the focal groups and total biomass
+all_yield_list <- list()
+
+for(i in 1:length(f35_results)){
+  
+  print(paste("Doing", f35_results[i]))
+  
+  # grab the index from the file name
+  this_idx <- as.numeric(gsub("-result.rds", "", gsub("results/ms/flat_results/", "", f35_results[i])))
+  
+  # run information based on the index
+  this_run <- oy_key %>% filter(idx == this_idx) %>% pull(run)
+  this_mult <- oy_key %>% filter(idx == this_idx) %>% pull(mult)
+  
+  # extract tables from results
+  this_result <- readRDS(f35_results[i])
+  # the packaging of the RDS object was different between the eScience runs and the batch (doAzureParallel) runs
+  if(length(this_result)==1) {
+    this_result <- this_result[[1]]
+  }
+  
+  biomage <- this_result[[2]]
+  catch <- this_result[[3]]
+
+  # now extract data
+  # get the end-of-run proportion of focal grop biomass / total gf biomass
+  total_biomass <- biomage %>%
+    pivot_longer(-Time, names_to = 'Code.Age', values_to = 'biomass_mt') %>%
+    separate(Code.Age, into = c('Code', 'Age'), sep = '\\.') %>%
+    filter(Code %in% all_fmp) %>%
+    filter(Code != "HAL") %>% # drop halibut for this, it is not in OY
+    group_by(Time,Code) %>%
+    summarise(biomass_mt = sum(biomass_mt)) %>% # sum across cohorts
+    ungroup() %>%
+    mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0)) %>%
+    group_by(Time, is_focal) %>%
+    summarise(step1 = sum(biomass_mt, na.rm = T)) %>%
+    group_by(Time) %>%
+    mutate(step2 = sum(step1)) %>%
+    ungroup() %>%
+    mutate(prop = step1 / step2) %>%
+    filter(is_focal == 1) %>%
+    slice_max(Time, n = 5) %>%
+    summarise(mean_prop = mean(prop),
+              cv_prop = sd(prop) / mean(prop)) %>%
+    mutate(Var = "Biomass")
+  
+  # total catch
+  total_catch <- catch %>%
+    dplyr::select(c(Time, all_of(all_fmp))) %>%
+    pivot_longer(-Time, names_to = "Code", values_to = "catch_mt") %>%
+    filter(Code %in% all_fmp) %>%
+    filter(Code != "HAL") %>% # drop halibut for this, it is not in OY
+    mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0)) %>%
+    group_by(Time, is_focal) %>%
+    summarise(step1 = sum(catch_mt, na.rm = T)) %>%
+    group_by(Time) %>%
+    mutate(step2 = sum(step1)) %>%
+    ungroup() %>%
+    mutate(prop = step1 / step2) %>%
+    filter(is_focal == 1) %>%
+    slice_max(Time, n = 5) %>%
+    summarise(mean_prop = mean(prop),
+              cv_prop = sd(prop) / mean(prop)) %>%
+    mutate(Var = "Catch")
+  
+  # # bind all
+  prop_df <- rbind(total_biomass, total_catch) %>%
+    mutate(run = this_run,
+           mult = this_mult)
+  
+  # add to multispecies yield list
+  all_yield_list[[i]] <- prop_df
+}
+
+all_yield_df <- bind_rows(all_yield_list)
+
+# add scenario information
+all_yield_df <- all_yield_df %>%
+  mutate(Fishing = ifelse(run %in% c("atf","atf_climate"), 
+                          "Arrowtooth\nunderexploitation",
+                          "MFMSY varies for\nall focal groups"),
+         Climate = ifelse(run %in% c("climate","atf_climate"), "ssp585 (2075-2085)", "Historical (1999)"))
+
+# reorder ATF F
+all_yield_df$Fishing <- factor(all_yield_df$Fishing, 
+                      levels = c("MFMSY varies for\nall focal groups",
+                                 "Arrowtooth\nunderexploitation"))
+
+# make a plot
+p_fmp <- all_yield_df %>%
+  filter(mult > 0) %>%
+  ggplot(aes(x = mult, y = mean_prop, color = Var))+
+  geom_point()+
+  geom_errorbar(aes(ymin = mean_prop - cv_prop,
+                    ymax = mean_prop + cv_prop),
+                width = 0.075)+
+  scale_color_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
+  theme_bw()+
+  scale_y_continuous(breaks = seq(0,1,0.1), limits = c(0,1))+
+  #scale_x_continuous(breaks = seq(0,4,0.5), limits = c(0,4))+
+  labs(x = expression(MF[MSY] ~ "multiplier"), 
+       y = "Focal groups / total groundfish", 
+       color = "") +
+  facet_grid(Climate~Fishing)
+p_fmp
+ggsave("results/figures/focal_to_total_ratio.png", p_fmp, width = 6.5, height = 4.5)
