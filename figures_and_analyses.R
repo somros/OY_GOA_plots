@@ -1623,7 +1623,6 @@ paa_plot2
 # Biomass and catch ratio of focal grps vs total groundfish ---------------
 # This is to address comments from R2
 # TODO: find a good place for it
-
 # start from the base model (modified from Rovellini et al. 2024)
 biom_base <- read.table("data/base_model_results/outputBiomIndx.txt", sep = " ", header = T)
 biom_base <- biom_base %>%
@@ -1631,7 +1630,7 @@ biom_base <- biom_base %>%
   pivot_longer(-Time, names_to = "Code", values_to = "mt")
 
 # all fmp groups plus HAL
-all_fmp <- c("SHD", "SHP", "DOG", "POL", "COD", "ATF", "HAL", "FHS", "REX", "FFS", "FFD", "SKL", "SKB", "SKO", "SBF", "POP", "RFS", "RFP", "RFD", "THO", "DFS", "DFD", "SCU", "OCT", "SQD")
+all_fmp <- c("SHD", "SHP", "DOG", "POL", "COD", "ATF", "HAL", "FHS", "REX", "FFS", "FFD", "SKL", "SKB", "SKO", "SBF", "POP", "RFS", "RFP", "RFD", "THO", "DFS", "DFD", "SCU")#, "OCT", "SQD")
 
 biom_fmp <- biom_base %>%
   filter(Code %in% all_fmp) %>%
@@ -1649,7 +1648,8 @@ biom_fmp %>%
   ungroup() %>%
   mutate(prop_focal = by_focal / tot) %>%
   filter(is_focal == 1)
-# ~60% of the biomass in base run is from the focal groups, slowly declining
+# If you consider cephalopods, ~60% of the biomass in base run is from the focal groups, slowly declining
+# if you only count fish, >75%
 
 # now catch
 catch_base <- read.table("data/base_model_results/outputCatch.txt", sep = " ", header = T)
@@ -1719,7 +1719,11 @@ for(i in 1:length(f35_results)){
     filter(is_focal == 1) %>%
     slice_max(Time, n = 5) %>%
     summarise(mean_prop = mean(prop),
-              cv_prop = sd(prop) / mean(prop)) %>%
+              mean_focal = mean(step1),
+              mean_total = mean(step2),
+              cv_prop = sd(prop) / mean(prop),
+              cv_focal = sd(step1) / mean(step1),
+              cv_total = sd(step2) / mean(step2)) %>%
     mutate(Var = "Biomass")
   
   # total catch
@@ -1738,7 +1742,11 @@ for(i in 1:length(f35_results)){
     filter(is_focal == 1) %>%
     slice_max(Time, n = 5) %>%
     summarise(mean_prop = mean(prop),
-              cv_prop = sd(prop) / mean(prop)) %>%
+              mean_focal = mean(step1),
+              mean_total = mean(step2),
+              cv_prop = sd(prop) / mean(prop),
+              cv_focal = sd(step1) / mean(step1),
+              cv_total = sd(step2) / mean(step2)) %>%
     mutate(Var = "Catch")
   
   # # bind all
@@ -1752,26 +1760,29 @@ for(i in 1:length(f35_results)){
 
 all_yield_df <- bind_rows(all_yield_list)
 
-# add scenario information
-all_yield_df <- all_yield_df %>%
-  mutate(Fishing = ifelse(run %in% c("atf","atf_climate"), 
-                          "Arrowtooth\nunderexploitation",
-                          "MFMSY varies for\nall focal groups"),
-         Climate = ifelse(run %in% c("climate","atf_climate"), "ssp585 (2075-2085)", "Historical (1999)"))
+fmp_key <- data.frame("run" = c("base","atf","climate","atf_climate"),
+                        "run_lab" = c("MFMSY varies for\nall focal groups,\nhistorical climate",
+                                  "Arrowtooth\nunderexploitation,\nhistorical climate",
+                                  "MFMSY varies for\nall focal groups,\nssp585",
+                                  "Arrowtooth\nunderexploitation,\nssp585"))
 
-# reorder ATF F
-all_yield_df$Fishing <- factor(all_yield_df$Fishing, 
-                      levels = c("MFMSY varies for\nall focal groups",
-                                 "Arrowtooth\nunderexploitation"))
+all_yield_df <- all_yield_df %>% left_join(fmp_key)
+
+# reorder factors for plotting
+all_yield_df$run_lab <- factor(all_yield_df$run_lab, levels = c("Base model,\ncalibration fishing",
+                                                              "MFMSY varies for\nall focal groups,\nhistorical climate",
+                                                              "Arrowtooth\nunderexploitation,\nhistorical climate",
+                                                              "MFMSY varies for\nall focal groups,\nssp585",
+                                                              "Arrowtooth\nunderexploitation,\nssp585"))
 
 # make a plot
 p_fmp <- all_yield_df %>%
   filter(mult > 0) %>%
   ggplot(aes(x = mult, y = mean_prop, color = Var))+
   geom_point()+
-  geom_errorbar(aes(ymin = mean_prop - cv_prop,
-                    ymax = mean_prop + cv_prop),
-                width = 0.075)+
+  # geom_errorbar(aes(ymin = mean_prop - cv_prop,
+  #                   ymax = mean_prop + cv_prop),
+  #               width = 0.075)+
   scale_color_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
   theme_bw()+
   scale_y_continuous(breaks = seq(0,1,0.1), limits = c(0,1))+
@@ -1779,6 +1790,38 @@ p_fmp <- all_yield_df %>%
   labs(x = expression(MF[MSY] ~ "multiplier"), 
        y = "Focal groups / total groundfish", 
        color = "") +
-  facet_grid(Climate~Fishing)
+  facet_grid(~run_lab)
 p_fmp
-ggsave("results/figures/focal_to_total_ratio.png", p_fmp, width = 6.5, height = 4.5)
+#ggsave("results/figures/focal_to_total_ratio.png", p_fmp, width = 6.5, height = 4.5)
+
+# make another plot, do some rearrangement
+all_yield_df_2 <- all_yield_df %>%
+  select(run_lab, mult, Var, mean_focal, mean_total, cv_focal, cv_total) %>%
+  pivot_longer(-c(run_lab,mult,Var), names_to = "type_grp", values_to = "mt") %>%
+  separate(type_grp, into = c("type", "grp"), sep = "_") %>%
+  pivot_wider(names_from = type, values_from = mt) 
+
+p_fmp_2 <- all_yield_df_2 %>%
+  filter(mult > 0) %>%
+  ggplot(aes(x = mult, y = mean/1000, color = Var, shape = grp))+
+  geom_point(size = 2)+
+  scale_color_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
+  geom_hline(yintercept = 800, color = "red", linetype = "dashed")+
+  labs(x = expression(MF[MSY] ~ "multiplier"), 
+       y = "1000 mt", 
+       color = "",
+       shape = "") +
+  scale_x_continuous(limits = c(0,4))+
+  scale_y_continuous(limits = c(0,NA))+
+  theme_bw()+
+  facet_grid2(Var~run_lab, scales = "free_y")
+p_fmp_2
+
+# combine into one figure
+cv_combo <- p_fmp / p_fmp_2 + # Stack plots vertically
+  plot_layout(heights = c(1, 2)) +  # 2:1 ratio between plots
+  plot_annotation(tag_levels = 'A') # Add letters A, B
+
+# Save the combined plot
+ggsave("results/figures/fmp_p_ms.png", 
+       cv_combo, height = 7.5, width = 8, dpi = 600)
