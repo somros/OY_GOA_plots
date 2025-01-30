@@ -376,6 +376,7 @@ global_yield_ms <- catch_df_long_ak %>%
   scale_fill_viridis_d()+
   scale_y_continuous(limits = c(0,900))+
   geom_hline(yintercept = 800, color = "red", linetype = "dashed")+
+  geom_vline(xintercept = 1, linetype = "dashed", linewidth = 0.35)+
   theme_bw()+
   labs(x = expression(MF[MSY] ~ "multiplier"), y = "Catch (1000 mt)", fill = "") +
   theme(legend.position="bottom",
@@ -384,7 +385,7 @@ global_yield_ms <- catch_df_long_ak %>%
   facet_grid(Climate~`F on\narrowtooth`)
 global_yield_ms
 
-#ggsave(paste0("results/figures/global_yield_ms_AK.png"), global_yield_ms, width = 6, height = 5)
+# ggsave(paste0("results/figures/global_yield_ms_AK.png"), global_yield_ms, width = 6, height = 5)
 
 # make a table with max catch per scenario for the report
 max_catch <- catch_df_long_ak %>%
@@ -994,6 +995,14 @@ other_plot_top_diets
 
 #ggsave(paste0("results/figures/other_forage_diets.png"), other_plot_forage_diets, width = 7, height = 4.05)
 #ggsave(paste0("results/figures/other_top_diets.png"), other_plot_top_diets, width = 7, height = 4.05)
+
+# combine into one figure
+TL_combo <- other_plot_forage_diets / other_plot_top_diets + # Stack plots vertically
+  plot_layout(heights = c(1, 1)) +  # 2:1 ratio between plots
+  plot_annotation(tag_levels = 'a') # Add letters A, B
+
+# Save the combined plot
+ggsave("results/figures/stacked_TL.png", TL_combo, height = 8, width = 8, dpi = 600)
 
 #########################
 # SUPPLEMENTARY FIGURES #
@@ -1842,10 +1851,10 @@ p_fmp_2
 ggsave("results/figures/biom_catch_focal.png", p_fmp_2, width = 8.3, height = 4.5)
 
 # combine into one figure
-cv_combo <- p_fmp / p_fmp_2 + # Stack plots vertically
+fmp_combo <- p_fmp / p_fmp_2 + # Stack plots vertically
   plot_layout(heights = c(1, 2)) +  # 2:1 ratio between plots
   plot_annotation(tag_levels = 'A') # Add letters A, B
 
 # Save the combined plot
 ggsave("results/figures/fmp_p_ms.png", 
-       cv_combo, height = 7.5, width = 8, dpi = 600)
+       fmp_combo, height = 7.5, width = 8, dpi = 600)
