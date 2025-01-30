@@ -1082,6 +1082,10 @@ specs_long$Species <- gsub("/","\n",specs_long$Species)
 specs_long$Species <- gsub(" and "," and\n",specs_long$Species)
 specs_long$Species <- gsub(" \\(","\n\\(",specs_long$Species)
 
+# remove mollusks for this plot - small catch 
+specs_long <- specs_long %>%
+  filter(!Species %in% c("Octopus","Squid"))
+
 # set some colors - this plot has lots of species
 # this combination works OK in that the key stocks are readable enough, but it is not greyscale- nor colorblind-friendly
 colors <- c(viridis(11)[2:10], inferno(11)[2:10], cividis(10)[2:9])
@@ -1099,13 +1103,13 @@ harvest_specs_fig <- specs_long %>%
   scale_x_discrete(breaks = seq(1992,2024,2))+
   labs(x = "", y = "1000 mt", fill = "")+
   theme(axis.text.x = element_text(angle = 60, hjust = 1))+
-  theme(legend.position="bottom",
-        legend.spacing.x = unit(0.1, 'cm'))+
-  guides(fill = guide_legend(nrow = 7))+
-  facet_grid(~Spec)
+  # theme(legend.position="bottom",
+  #       legend.spacing.x = unit(0.1, 'cm'))+
+  guides(fill = guide_legend(ncol = 1))+
+  facet_wrap(~Spec, nrow = 2)
 harvest_specs_fig
 
-ggsave("results/figures/harvest_specs_S1.png", harvest_specs_fig, width = 8.3, height = 5.5)
+ggsave("results/figures/harvest_specs_S1.png", harvest_specs_fig, width = 8, height = 6.5)
 
 # mean recent catch for text
 tt <- specs_long %>%
