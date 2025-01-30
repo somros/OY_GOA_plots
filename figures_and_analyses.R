@@ -1365,10 +1365,11 @@ p_below_target <- below_target %>%
   geom_vline(xintercept = 1, color = "black", linetype = "dotted")+
   labs(x = expression(MF[MSY] ~ "multiplier"), y = "Stocks with SSB < B35%") +
   scale_y_continuous(breaks = 0:12)+
+  theme(panel.grid.minor = element_blank())+
   facet_grid(Climate~`F on\narrowtooth`)
 p_below_target
 
-#ggsave(paste0("results/figures/below_target_S1.6.png"), p_below_target, width = 6, height = 4)
+# ggsave(paste0("results/figures/below_target_S1.6.png"), p_below_target, width = 6, height = 4)
 
 # S1.7. Walters plot ------------------------------------------------------
 # create a plot akin to Walters et al. (2005) Fig. 3, except we do not organize it by TL for now
