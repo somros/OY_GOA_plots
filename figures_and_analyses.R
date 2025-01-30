@@ -1676,6 +1676,12 @@ catch_fmp %>%
 
 # now do the same for the MS runs from step 2
 # this has the purpose of showing the relation between the focal groups and total biomass
+source("nc_for_scaling.R")
+# catch_scalars <- bind_rows(lapply(f35_nc, get_catch_ak_scalar)) # this is very slow, it can be optimized in many ways
+# save this as it takes so long to produce
+# write.csv(catch_scalars, "data/catch_scalars_fmp.csv", row.names = F)
+catch_scalars <- read.csv("data/catch_scalars_fmp.csv")
+
 all_yield_list <- list()
 
 for(i in 1:length(f35_results)){
@@ -1698,6 +1704,9 @@ for(i in 1:length(f35_results)){
   
   biomage <- this_result[[2]]
   catch <- this_result[[3]]
+  
+  # bring in AK vs BC scalars
+  this_scalar = catch_scalars %>% filter(idx == this_idx)
 
   # now extract data
   # get the end-of-run proportion of focal grop biomass / total gf biomass
@@ -1709,6 +1718,9 @@ for(i in 1:length(f35_results)){
     group_by(Time,Code) %>%
     summarise(biomass_mt = sum(biomass_mt)) %>% # sum across cohorts
     ungroup() %>%
+    left_join(grps %>% select(Code, Name), by = "Code") %>%
+    left_join(this_scalar, by = "Name") %>%
+    mutate(biomass_mt = biomass_mt * ak_prop) %>%
     mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0)) %>%
     group_by(Time, is_focal) %>%
     summarise(step1 = sum(biomass_mt, na.rm = T)) %>%
@@ -1732,6 +1744,9 @@ for(i in 1:length(f35_results)){
     pivot_longer(-Time, names_to = "Code", values_to = "catch_mt") %>%
     filter(Code %in% all_fmp) %>%
     filter(Code != "HAL") %>% # drop halibut for this, it is not in OY
+    left_join(grps %>% select(Code, Name), by = "Code") %>%
+    left_join(this_scalar, by = "Name") %>%
+    mutate(catch_mt = catch_mt * ak_prop) %>%
     mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0)) %>%
     group_by(Time, is_focal) %>%
     summarise(step1 = sum(catch_mt, na.rm = T)) %>%
@@ -1752,7 +1767,8 @@ for(i in 1:length(f35_results)){
   # # bind all
   prop_df <- rbind(total_biomass, total_catch) %>%
     mutate(run = this_run,
-           mult = this_mult)
+           mult = this_mult,
+           idx = this_idx)
   
   # add to multispecies yield list
   all_yield_list[[i]] <- prop_df
@@ -1799,13 +1815,16 @@ all_yield_df_2 <- all_yield_df %>%
   select(run_lab, mult, Var, mean_focal, mean_total, cv_focal, cv_total) %>%
   pivot_longer(-c(run_lab,mult,Var), names_to = "type_grp", values_to = "mt") %>%
   separate(type_grp, into = c("type", "grp"), sep = "_") %>%
-  pivot_wider(names_from = type, values_from = mt) 
+  pivot_wider(names_from = type, values_from = mt) %>%
+  mutate(grp = gsub("focal","Focal groups", grp),
+         grp = gsub("total", "All GOA\nFMP species", grp))
 
 p_fmp_2 <- all_yield_df_2 %>%
   filter(mult > 0) %>%
-  ggplot(aes(x = mult, y = mean/1000, color = Var, shape = grp))+
-  geom_point(size = 2)+
-  scale_color_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
+  ggplot(aes(x = mult, y = mean/1000, shape = grp))+
+  geom_point(size = 1.5)+
+  scale_shape_manual(values = c(1,2)) +
+  #scale_color_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
   geom_hline(yintercept = 800, color = "red", linetype = "dashed")+
   labs(x = expression(MF[MSY] ~ "multiplier"), 
        y = "1000 mt", 
@@ -1816,6 +1835,7 @@ p_fmp_2 <- all_yield_df_2 %>%
   theme_bw()+
   facet_grid2(Var~run_lab, scales = "free_y")
 p_fmp_2
+ggsave("results/figures/biom_catch_focal.png", p_fmp_2, width = 8.3, height = 4.5)
 
 # combine into one figure
 cv_combo <- p_fmp / p_fmp_2 + # Stack plots vertically
