@@ -1831,7 +1831,7 @@ all_yield_df_2 <- all_yield_df %>%
   separate(type_grp, into = c("type", "grp"), sep = "_") %>%
   pivot_wider(names_from = type, values_from = mt) %>%
   mutate(grp = gsub("focal","Focal groups", grp),
-         grp = gsub("total", "All GOA\nFMP species", grp))
+         grp = gsub("total", "All GOA FMP species", grp))
 
 p_fmp_2 <- all_yield_df_2 %>%
   filter(mult > 0) %>%
@@ -1840,6 +1840,7 @@ p_fmp_2 <- all_yield_df_2 %>%
   scale_shape_manual(values = c(1,2)) +
   #scale_color_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
   geom_hline(yintercept = 800, color = "red", linetype = "dashed")+
+  geom_vline(xintercept = 1, linetype = "dashed", linewidth = 0.35)+
   labs(x = expression(MF[MSY] ~ "multiplier"), 
        y = "1000 mt", 
        color = "",
@@ -1847,9 +1848,11 @@ p_fmp_2 <- all_yield_df_2 %>%
   scale_x_continuous(limits = c(0,4))+
   scale_y_continuous(limits = c(0,NA))+
   theme_bw()+
+  theme(legend.position="bottom",
+        legend.spacing.x = unit(0.1, 'cm'))+
   facet_grid2(Var~run_lab, scales = "free_y")
 p_fmp_2
-ggsave("results/figures/biom_catch_focal.png", p_fmp_2, width = 8.3, height = 4.5)
+ggsave("results/figures/biom_catch_focal.jpg", p_fmp_2, width = 8, height = 4.5)
 
 # combine into one figure
 fmp_combo <- p_fmp / p_fmp_2 + # Stack plots vertically
