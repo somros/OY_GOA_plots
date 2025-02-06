@@ -221,7 +221,7 @@ p_ms <- f_df_ms %>%
   facet_grid2(LongNamePlot~Var, scales = 'free', independent = 'all')+
   theme(strip.text.y = element_text(angle=0))
 p_ms
-#ggsave(paste0('results/figures/biom_catch_key_stocks.png'), p_ms, width = 7, height = 7)
+ggsave(paste0('results/figures/biom_catch_key_stocks.jpg'), p_ms, width = 7, height = 7, dpi = 600)
 
 # make figures with all stocks for supplement
 grp1 <- unique(f_df_ms$LongNamePlot)[1:6]
@@ -385,7 +385,7 @@ global_yield_ms <- catch_df_long_ak %>%
   facet_grid(Climate~`F on\narrowtooth`)
 global_yield_ms
 
-# ggsave(paste0("results/figures/global_yield_ms_AK.png"), global_yield_ms, width = 6, height = 5)
+ggsave(paste0("results/figures/global_yield_ms_AK.jpeg"), global_yield_ms, width = 6, height = 5, dpi = 600)
 
 # make a table with max catch per scenario for the report
 max_catch <- catch_df_long_ak %>%
@@ -581,7 +581,7 @@ f_plot_ms <- to_plot %>%
   theme(strip.text.y = element_text(angle=0))
 f_plot_ms
 
-#ggsave(paste0('results/figures/catch',t,'_MS_ms.png'), f_plot_ms, width = 6, height = 6)
+ggsave(paste0('results/figures/catch',t,'_MS_ms.jpeg'), f_plot_ms, width = 6, height = 6, dpi = 600)
 
 # make figures for supplement (break into two sets)
 grp1 <- unique(to_plot$LongNamePlot)[1:6]
@@ -1002,7 +1002,7 @@ TL_combo <- other_plot_forage_diets / other_plot_top_diets + # Stack plots verti
   plot_annotation(tag_levels = 'a') # Add letters A, B
 
 # Save the combined plot
-ggsave("results/figures/stacked_TL.png", TL_combo, height = 8, width = 8, dpi = 600)
+ggsave("results/figures/stacked_TL.jpeg", TL_combo, height = 8, width = 8, dpi = 600)
 
 #########################
 # SUPPLEMENTARY FIGURES #
@@ -1118,7 +1118,7 @@ harvest_specs_fig <- specs_long %>%
   facet_wrap(~Spec, nrow = 2)
 harvest_specs_fig
 
-ggsave("results/figures/harvest_specs_S1.png", harvest_specs_fig, width = 8, height = 6.5)
+ggsave("results/figures/harvest_specs_S1.jpeg", harvest_specs_fig, width = 8, height = 6.5, dpi = 600)
 
 # mean recent catch for text
 tt <- specs_long %>%
@@ -1369,7 +1369,7 @@ p_below_target <- below_target %>%
   facet_grid(Climate~`F on\narrowtooth`)
 p_below_target
 
-# ggsave(paste0("results/figures/below_target_S1.6.png"), p_below_target, width = 6, height = 4)
+ggsave(paste0("results/figures/below_target_S1.6.jpeg"), p_below_target, width = 6, height = 4, dpi = 600)
 
 # S1.7. Walters plot ------------------------------------------------------
 # create a plot akin to Walters et al. (2005) Fig. 3, except we do not organize it by TL for now
@@ -1852,7 +1852,7 @@ p_fmp_2 <- all_yield_df_2 %>%
         legend.spacing.x = unit(0.1, 'cm'))+
   facet_grid2(Var~run_lab, scales = "free_y")
 p_fmp_2
-ggsave("results/figures/biom_catch_focal.jpg", p_fmp_2, width = 8, height = 4.5)
+ggsave("results/figures/biom_catch_focal.png", p_fmp_2, width = 8, height = 4.5)
 
 # combine into one figure
 fmp_combo <- p_fmp / p_fmp_2 + # Stack plots vertically
