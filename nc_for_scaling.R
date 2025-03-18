@@ -1,12 +1,11 @@
 # Alberto Rovellini
 # 3/15/2024
-# Function to pull biomass proportion in AK over the model domain from out.nc files
-# This is needed because we want to plot global T3 groundfish yield against the OY cap, but the OY cap is AK only
-# We do not have spatial output for catch (because we save only some output from the large batch runs)
+# Function to calculate the proportion of total model biomass in the Alaska boxes out.nc files
+# This is needed because we want to plot global groundfish yield against the OY cap, but the OY cap is for Alaska only
+# We do not have spatial output for catch (we do not save this type of output from the large batch runs for storage reasons)
 
-# Why does this work? Because mFC extracts catch proportionally to biomass and there are no further limitations to fishing
-# See scripts comparing_biom_catch_spatial.R and check_catch_outputs.R for details on why this works
-# Whn we diverge from this simple setup of no fleets, no spatial closures, and mFC, then this will no longer apply
+# Why does this work? Because mFC extracts catch proportionally to biomass and there are no further spatial limitations to fishing
+# When we diverge from this simple setup of no fleets, no spatial closures, and mFC, then this will no longer apply
 
 # This function will:
 # open an out.nc file for each of the MS runs
@@ -107,29 +106,6 @@ get_catch_ak_scalar <- function(nc_file){
       # turn list to data frame
       biom_box_df <- bind_rows(biom_box_ls)
       
-      # to avoid immense tables when we do it for all species (and once per run), work out the proportions here
-      # do it by age class first
-      # this will be used to scale the biomass of each age class
-      # I am not even convinced we need this - if we are keeping everything to total population level except for the global yield plot
-      # 92 is the first box in BC
-      # biom_ak_prop <- biom_box_df %>%
-      #   mutate(area = ifelse(box_id < 92, "ak", "bc")) %>%
-      #   group_by(ts, age) %>% # get total biomass by time step by age across the model domain
-      #   mutate(mt_tot = sum(mt)) %>%
-      #   group_by(ts, age, area) %>%
-      #   mutate(mt_area = sum(mt)) %>%
-      #   ungroup() %>%
-      #   mutate(prop = mt_area / mt_tot) %>%
-      #   select(ts, age, area, prop) %>%
-      #   distinct()
-      
-      # view:
-      # biom_ak_prop %>%
-      #   filter(area == "ak") %>%
-      #   ggplot(aes(x = ts, y = prop, color = factor(age))) +
-      #   geom_line()
-      
-      # now bring in selex, filter at or above it, sum, and get prop for total
       catch_prop_from_ak <- biom_box_df %>%
         mutate(area = ifelse(box_id < 92, "ak", "bc")) %>% # define areas based on boxes
         mutate(Name = fg) %>% # add name
@@ -146,19 +122,10 @@ get_catch_ak_scalar <- function(nc_file){
         select(ts, Name, area, prop) %>%
         distinct()
       
-      # handle time:
-      # drop t0 for easier filtering
-      # subsample at every 5 time steps to have annual values
-      # keep the last 5 of the series only
-      # average
-      # produce one value per run per species
-      
       # NOTE: the MS batches have annual output in the biology file too, so no need to re-index
       catch_prop_from_ak <- catch_prop_from_ak %>%
         filter(area == "ak") %>% # keep proportion in AK only
         filter(ts > 0) %>% # drop t0
-        # filter(ts %in% seq(5,250,5)) %>% # resample to have annual time steps instead of 73 days
-        # mutate(ts = ts / 5) %>% # reindex the time step accordingly 
         slice_tail(n = 5) %>% # keep end of the run for consistency with the catch sampling
         group_by(Name) %>%
         summarize(ak_prop = mean(prop))

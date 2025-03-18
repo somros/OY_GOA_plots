@@ -2,6 +2,7 @@
 # University of Washington - School of Aquatic and Fishery Sciences
 # 01/21/2025
 # This script takes the output of the Atlantis runs for the evaluation of the Optimum Yield in the Gulf of Alaska and creates the analyses and figures for the associated manuscript
+# The code is organized by Figure number, following the order of the main text. Supplementary figures are created throughout with their main-text counterparts (if any), and are ordered more loosely
 
 # Set up the environment and read data ------------------------------------------------
 
@@ -46,6 +47,124 @@ f_lookup <- read.csv("data/f_lookup_OY_SS.csv")
 # list Tier 3 stocks 
 t3_fg <- f_lookup %>% pull(species) %>% unique() %>% sort()
 t3_names <- grps %>% filter(Code %in% t3_fg) %>% pull(Name) # names for nc files pulling
+
+
+
+# Figure 1. GOA harvest specifications ------------------------------------
+# this spreadsheet is available for download from AKFIN Answers
+specs <- read_excel("data/GOA_harvest specs_1986-2024.xlsx", 
+                    sheet = 1,
+                    na = "n/a",
+                    n_max = 131)
+
+# need to clean the data set
+# drop asterisks and commas and turn to numeric
+for(col in names(specs)){
+  specs[[col]] <- gsub("\\*","", specs[[col]])
+  specs[[col]] <- gsub(",","", specs[[col]])
+}
+
+# now handle column names
+# pad years
+colnames(specs) <- c("", "", rep(2024:1986, each = 3))
+# collapse column names with the first row for pivot later
+new_row <- rep(NA, ncol(specs))
+for(i in 1:ncol(specs)){
+  new_row[i] <- paste(specs[1,i], names(specs)[i], sep = "_")
+  new_row[1:2] <- gsub("_","",new_row[1:2])
+}
+
+# set new colnames
+colnames(specs) <- new_row
+# drop old row 1
+specs <- specs[-1,]
+
+# now pad the species column
+for(i in 1:nrow(specs)){
+  if(is.na(specs[i,1])){
+    specs[i,1] <- specs[i-1,1]
+  }
+}
+
+# pivot longer, split spec and year, add Tier and Atlantis functional group
+specs_long <- specs %>%
+  pivot_longer(-c(Species, Area), names_to = "Spec_Year", values_to = "mt") %>%
+  separate(Spec_Year, into = c("Spec", "Year"), sep = "_") %>%
+  filter(Year > 1990, Area %in% c("Total","Total (GW)", "GW")) %>%
+  mutate(mt = as.numeric(mt)) %>%
+  drop_na() %>%
+  mutate(Area = "GOA")
+
+# add in total groundfish catch reconstructions
+# Data is from "Catch Data" tab in AKFIN Answers using the following tags:
+# * Year: 1991-2024
+# * FMP Area: GOA
+# * FMP Subarea: --Select Value--
+# * Gear: --Select Value--
+# * Species Group: --Select Value--
+# * Choose a Report: "Detail with Processor/Vessel Characteristics"
+
+catch_data <- read.csv("data/Groundfish Total Catch.csv", fileEncoding = 'UTF-8-BOM')
+
+# there are a lot of non TAC species reported here, as well as by-catch species, species that are in the FMP but are not groundfish, etc.
+# For the purpose of comparing to ABC/TAC plots, we will filter only the species that have a TAC in the harvest specifications
+# Map species in the catch to species in the harvest specification data set
+tac_key <- read.csv("data/tac_catch_key.csv", header = T)
+
+# process the catch data so that it can be mapped to the harvest specification data
+catch_data_short <- catch_data %>%
+  select(Year, Species.Group.Name, Catch..mt.) %>%
+  left_join(tac_key, by = c("Species.Group.Name" = "Catch_sp")) %>%
+  group_by(Year, TAC_sp) %>%
+  summarise(mt = sum(Catch..mt., na.rm = T)) %>%
+  mutate(Area = "GOA", Spec = "Catch") %>%
+  select(TAC_sp, Area, Spec, Year, mt) %>%
+  rename(Species = TAC_sp)
+
+specs_long <- specs_long %>% rbind(catch_data_short) %>% drop_na()
+
+# order factors
+specs_long$Spec <- factor(specs_long$Spec, levels = c("OFL", "ABC", "TAC", "Catch"))
+
+# format stock names for the plot
+specs_long$Species <- gsub("/","\n",specs_long$Species)
+specs_long$Species <- gsub(" and "," and\n",specs_long$Species)
+specs_long$Species <- gsub(" \\(","\n\\(",specs_long$Species)
+
+# remove mollusks for this plot - small catch 
+specs_long <- specs_long %>%
+  filter(!Species %in% c("Octopus","Squid"))
+
+# set some colors - this plot has lots of species
+# this combination works OK in that the key stocks are readable enough, but it is not greyscale- nor colorblind-friendly
+colors <- c(viridis(11)[2:10], inferno(11)[2:10], cividis(10)[2:9])
+
+# make a bar chart
+harvest_specs_fig <- specs_long %>%
+  #filter(Tier == 3) %>%
+  group_by(Year, Spec, Species) %>%
+  summarise(mt = sum(mt, na.rm = T)) %>%
+  ggplot(aes(x = Year, y = mt/1000, fill = Species))+
+  geom_bar(stat = "identity", position = "stack")+
+  scale_fill_manual(values = colors)+
+  geom_hline(yintercept = 800, linetype = "dashed", color = "red")+
+  theme_bw()+
+  scale_x_discrete(breaks = seq(1992,2024,2))+
+  labs(x = "", y = "1000 mt", fill = "")+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))+
+  # theme(legend.position="bottom",
+  #       legend.spacing.x = unit(0.1, 'cm'))+
+  guides(fill = guide_legend(ncol = 1))+
+  facet_wrap(~Spec, nrow = 2)
+harvest_specs_fig
+
+ggsave("results/figures/FIGURE_1.jpeg", harvest_specs_fig, width = 8, height = 6.5, dpi = 600)
+
+# mean recent catch for text
+tt <- specs_long %>%
+  filter(Spec == "Catch") %>%
+  group_by(Year) %>%
+  summarise(Catch = sum(mt)) 
 
 # Figure 2. Single-species biomass and catch  --------------------------------------------------------------
 
@@ -221,7 +340,7 @@ p_ms <- f_df_ms %>%
   facet_grid2(LongNamePlot~Var, scales = 'free', independent = 'all')+
   theme(strip.text.y = element_text(angle=0))
 p_ms
-ggsave(paste0('results/figures/biom_catch_key_stocks.jpg'), p_ms, width = 7, height = 7, dpi = 600)
+ggsave('results/figures/FIGURE_3.jpeg', p_ms, width = 7, height = 7, dpi = 600)
 
 # make figures with all stocks for supplement
 grp1 <- unique(f_df_ms$LongNamePlot)[1:6]
@@ -262,8 +381,8 @@ f_plot2 <- f_df_ms %>%
   theme(strip.text.y = element_text(angle=0))
 f_plot2
 
-#ggsave(paste0('results/figures/yield_curves',t,'_OY_1.png'), f_plot1, width = 7, height = 7)
-#ggsave(paste0('results/figures/yield_curves',t,'_OY_2.png'), f_plot2, width = 7, height = 7)
+ggsave('results/figures/FIGURE_S4_1.jpeg', f_plot1, width = 7, height = 7)
+ggsave('results/figures/FIGURE_S4_2.jpeg', f_plot2, width = 7, height = 7)
 
 ####################################
 # Analysis of end-of-run variability
@@ -284,9 +403,9 @@ cv_p_ss <- cv_df_ss %>%
   facet_wrap(~LongName, nrow = 4)
 cv_p_ss
 
-#ggsave("results/figures/cv_p_ss.png", cv_p_ss, width = 8, height = 5)
+ggsave("results/figures/FIGURE_S6.png", cv_p_ss, width = 8, height = 5)
 
-# Figure 3. Global yield ---------------------------------------------------------------
+# Figure 4. Global yield ---------------------------------------------------------------
 # # list the rds files
 f35_results <- list.files(file.path("results", "ms", "flat_results"),
                           pattern = ".rds",
@@ -347,6 +466,10 @@ catch_df_long <- catch_df %>%
   left_join(grps %>% select(Code, LongName), by = "Code")
 
 # apply scaling of catch by biomass in AK, so that we only have AK catch now
+# source("nc_for_scaling.R")
+# catch_scalars <- bind_rows(lapply(f35_nc, get_catch_ak_scalar)) # DO NOT RUN
+# save this as it takes so long to produce
+# write.csv(catch_scalars, "data/catch_scalars.csv", row.names = F)
 catch_scalars <- read.csv("data/catch_scalars.csv")
 
 catch_df_long_ak <- catch_df_long %>%
@@ -385,7 +508,7 @@ global_yield_ms <- catch_df_long_ak %>%
   facet_grid(Climate~`F on\narrowtooth`)
 global_yield_ms
 
-ggsave(paste0("results/figures/global_yield_ms_AK.jpeg"), global_yield_ms, width = 6, height = 5, dpi = 600)
+ggsave(paste0("results/figures/FIGURE_4.jpeg"), global_yield_ms, width = 6, height = 5, dpi = 600)
 
 # make a table with max catch per scenario for the report
 max_catch <- catch_df_long_ak %>%
@@ -397,7 +520,8 @@ max_catch <- catch_df_long_ak %>%
   group_by(run) %>%
   slice_max(total_yield_ak)
 
-# Figure 4. Biomass and catch curves ------------------------------------------------
+# Figure 5. Stocks under B35 ----------------------------------------------
+# How many stocks are below 35% B0 for each scenario?
 # extract biomass and catch from the multispecies runs, i.e. Step 2
 ms_yield_list <- list()
 
@@ -514,12 +638,53 @@ for(i in 1:length(f35_results)){
 
 ms_yield_df <- bind_rows(ms_yield_list)
 
-# Reference points, we will use these for the plots
-# get two data frames: one for b0 and one for maximum yield
-# b0 - fixed to base conditions
+# handle the NaN's from FHS
+ms_yield_df <- as.data.frame(ms_yield_df)
+ms_yield_df$f[is.nan(ms_yield_df$f)] <- NA
+
+# get static B0 from Base Scenario
 b0 <- ms_yield_df %>% filter(mult == 0, Var == "Biomass", run == "base") %>% dplyr::select(LongName, Mean) %>% rename(b0 = Mean)
 
-# max yield
+below_target <- ms_yield_df %>%
+  filter(Var == "Biomass") %>%
+  filter(!(run %in% c("atf", "atf_climate") & LongName == "Arrowtooth flounder")) %>%
+  left_join(b0, by = "LongName") %>%
+  mutate(depletion = Mean / b0) %>%
+  mutate(below_target = ifelse(depletion < 0.35, 1, 0)) %>%
+  group_by(run, mult) %>%
+  mutate(n_below_target = sum(below_target)) %>%
+  mutate(prop_below_target = n_below_target / length(unique(LongName))) %>%
+  ungroup() %>%
+  select(run, mult, n_below_target, prop_below_target) %>%
+  distinct()
+
+# add scenario information
+below_target <- below_target %>%
+  mutate(`F on\narrowtooth` = ifelse(run %in% c("atf","atf_climate"), 
+                                     "Arrowtooth underexploitation",
+                                     "MFMSY varies for all focal groups"),
+         Climate = ifelse(run %in% c("climate","atf_climate"), "ssp585 (2075-2085)", "Historical (1999)"))
+
+# reorder ATF F
+below_target$`F on\narrowtooth` <- factor(below_target$`F on\narrowtooth`, 
+                                          levels = c("MFMSY varies for all focal groups",
+                                                     "Arrowtooth underexploitation"))
+
+p_below_target <- below_target %>%
+  ggplot(aes(x = mult, y = n_below_target))+
+  geom_col()+
+  theme_bw()+
+  geom_vline(xintercept = 1, color = "black", linetype = "dotted")+
+  labs(x = expression(MF[MSY] ~ "multiplier"), y = "Stocks with SSB < B35%") +
+  scale_y_continuous(breaks = 0:12)+
+  theme(panel.grid.minor = element_blank())+
+  facet_grid(Climate~`F on\narrowtooth`)
+p_below_target
+
+ggsave(paste0("results/figures/FIGURE_5.jpeg"), p_below_target, width = 6, height = 4, dpi = 600)
+
+# Figure 6. Biomass and catch curves ------------------------------------------------
+# get max yield (proxy of MSY)
 ymax_ms <- ms_yield_df %>%
   filter(Var == "Catch") %>%
   group_by(LongName, run) %>%
@@ -529,10 +694,6 @@ ymax_ms <- ms_yield_df %>%
   rename(ymax = Mean)
 
 ymax <- ymax_ms
-
-# handle the NaN's from FHS
-ms_yield_df <- as.data.frame(ms_yield_df)
-ms_yield_df$f[is.nan(ms_yield_df$f)] <- NA
 
 # plot catch and biomass curves
 to_plot <- ms_yield_df
@@ -546,13 +707,13 @@ to_plot <- to_plot %>%
   mutate(Fishing = ifelse(run %in% c("atf","atf_climate"),
                           "Arrowtooth\nunderexploitation",
                           "MFMSY varies for\nall focal groups"),
-         Climate = ifelse(run %in% c("climate","atf_climate"), "ssp585 (2075-2085)", "Historical (1999)"))
+         Climate = ifelse(run %in% c("climate","atf_climate"), "ssp585\n(2075-2085)", "Historical\n(1999)"))
 
 ymax <- ymax %>%
   mutate(Fishing = ifelse(run %in% c("atf","atf_climate"),
                           "Arrowtooth\nunderexploitation",
                           "MFMSY varies for\nall focal groups"),
-         Climate = ifelse(run %in% c("climate","atf_climate"), "ssp585 (2075-2085)", "Historical (1999)"))
+         Climate = ifelse(run %in% c("climate","atf_climate"), "ssp585\n(2075-2085)", "Historical\n(1999)"))
 
 # reorder ATF F                             
 to_plot$Fishing <- factor(to_plot$Fishing,
@@ -581,7 +742,7 @@ f_plot_ms <- to_plot %>%
   theme(strip.text.y = element_text(angle=0))
 f_plot_ms
 
-ggsave(paste0('results/figures/catch',t,'_MS_ms.jpeg'), f_plot_ms, width = 6, height = 6, dpi = 600)
+ggsave('results/figures/FIGURE_6.jpeg', f_plot_ms, width = 4.8, height = 6.5, dpi = 600)
 
 # make figures for supplement (break into two sets)
 grp1 <- unique(to_plot$LongNamePlot)[1:6]
@@ -614,50 +775,8 @@ f_plot2 <- to_plot %>%
   theme(strip.text.y = element_text(angle=0))
 f_plot2
 
-#ggsave(paste0('results/figures/biomass_catch',t,'_MS_1.png'), f_plot1, width = 7.5, height = 7)
-#ggsave(paste0('results/figures/biomass_catch',t,'_MS_2.png'), f_plot2, width = 7.5, height = 7)
-
-##################
-###AMSS
-## DELETE AFTER CONFERENCE
-f_plot_amss <- to_plot %>%
-  filter(LongName %in% key_grps, Var == "Catch") %>%
-  filter(LongName != "Pacific halibut") %>%
-  ggplot(aes(x = f, y = Mean/1000, color = Climate, linetype = Fishing))+
-  geom_line(linewidth = 1)+
-  scale_color_manual(values = c("#4477AA", "#EE6677"))+
-  # geom_vline(data = ymax %>% 
-  #              filter(LongName %in% key_grps) %>% 
-  #              filter(!(LongNamePlot == "Arrowtooth\nflounder" & Fishing == "Arrowtooth\nunderexploitation")), 
-  #            aes(xintercept = f, color = Climate, linetype = Fishing))+
-  theme_bw()+
-  scale_y_continuous(limits = c(0, NA))+
-  labs(x = 'Fishing mortality (F)', y = 'Catch (1000 mt)')+
-  facet_grid2(LongNamePlot~Var, scales = 'free', independent = 'all')+
-  #facet_wrap(~ LongName, scales = "free", ncol = 1)+
-  theme(strip.text.y = element_text(angle=0))
-f_plot_amss
-#ggsave(paste0('results/figures/catch_AMSS.png'), f_plot_amss, width = 6, height = 6)
-
-f_plot_amss_PC <- to_plot %>%
-  filter(LongName %in% key_grps, Var == "Catch") %>%
-  filter(LongName %in% c("Walleye pollock", "Pacific cod")) %>%
-  ggplot(aes(x = f, y = Mean/1000, color = Climate, linetype = Fishing))+
-  geom_line(linewidth = 1.5)+
-  scale_color_manual(values = c("#4477AA", "#EE6677"))+
-  # geom_vline(data = ymax %>% 
-  #              filter(LongName %in% key_grps) %>% 
-  #              filter(!(LongNamePlot == "Arrowtooth\nflounder" & Fishing == "Arrowtooth\nunderexploitation")), 
-  #            aes(xintercept = f, color = Climate, linetype = Fishing))+
-  theme_bw()+
-  scale_y_continuous(limits = c(0, NA))+
-  labs(x = 'Fishing mortality (F)', y = 'Catch (1000 mt)')+
-  facet_grid2(LongNamePlot~Var, scales = 'free', independent = 'all')+
-  #facet_wrap(~ LongName, scales = "free", ncol = 1)+
-  theme(strip.text.y = element_text(angle=0))
-f_plot_amss_PC
-ggsave(paste0('results/figures/catch_AMSS_PC.png'), f_plot_amss_PC, width = 5, height = 5)
-
+ggsave('results/figures/FIGURE_S9_1.jpeg', f_plot1, width = 7.5, height = 7)
+ggsave('results/figures/FIGURE_S9_2.jpeg', f_plot2, width = 7.5, height = 7)
 
 ####################################
 # Analysis of end-of-run variability
@@ -665,21 +784,8 @@ ggsave(paste0('results/figures/catch_AMSS_PC.png'), f_plot_amss_PC, width = 5, h
 cv_df <- to_plot %>%
   dplyr::select(LongName, Fishing, Climate, mult, Var, CV)
 
+# by species
 cv_p1 <- cv_df %>%
-  ggplot()+
-  geom_boxplot(aes(x = mult, y = CV, group = interaction(mult,Var), fill = Var, color = Var), alpha = 0.7)+
-  scale_x_continuous(breaks = seq(0,4,0.5))+
-  scale_fill_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
-  scale_color_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
-  theme_bw()+
-  labs(x = expression(MF[MSY] ~ "multiplier"), y = "CV", fill = "") +
-  guides(color = "none")+
-  facet_grid(Climate~Fishing)
-cv_p1
-#ggsave("results/figures/cv_p_ms_1.png", cv_p1, width = 7, height = 4.5)
-
-# and by species
-cv_p2 <- cv_df %>%
   filter(Var == "Biomass") %>%
   ggplot(aes(x = LongName, y = CV, group = factor(mult), color =factor(mult)))+
   stat_summary(fun.data = function(x) {
@@ -693,19 +799,29 @@ cv_p2 <- cv_df %>%
   guides(color = guide_legend(ncol = 2))+
   theme(axis.text.x = element_text(angle = 30, hjust = 1))+
   labs(x = "", y = "CV", color = expression(atop(MF[MSY], "multiplier")))
+cv_p1
+
+# by variable
+cv_p2 <- cv_df %>%
+  ggplot()+
+  geom_boxplot(aes(x = mult, y = CV, group = interaction(mult,Var), fill = Var, color = Var), alpha = 0.7)+
+  scale_x_continuous(breaks = seq(0,4,0.5))+
+  scale_fill_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
+  scale_color_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
+  theme_bw()+
+  labs(x = expression(MF[MSY] ~ "multiplier"), y = "CV", fill = "") +
+  guides(color = "none")+
+  facet_grid(Climate~Fishing)
 cv_p2
 
-#ggsave("results/figures/cv_p_ms_2.png", cv_p2, width = 8, height = 5)
-
-cv_combo <- cv_p2 / cv_p1 + # Stack plots vertically
+cv_combo <- cv_p1 / cv_p2 + # Stack plots vertically
   plot_layout(heights = c(1, 1.5)) +  # 2:1 ratio between plots
   plot_annotation(tag_levels = 'A') # Add letters A, B
 
 # Save the combined plot
-ggsave("results/figures/cv_p_ms.png", cv_combo, height = 8.5, width = 8, dpi = 600)
+ggsave("results/figures/FIGURE_S10.png", cv_combo, height = 8.5, width = 8, dpi = 600)
 
-# Figures 5 and 6: top predators and forage fish ------------------------------
-
+# Figure 7: top predators and forage fish ------------------------------
 top_preds <- c("SSL","PIN","DOL","BDF","BSF")
 forage <- c("CAP","SAN","HER","EUL","FOS")
 other_fg <- c(top_preds, forage)
@@ -819,7 +935,7 @@ cv_p3 <- cv_df_other %>%
   guides(color = "none")+
   facet_grid(Climate~Fishing)
 cv_p3
-# ggsave("results/figures/cv_p_other.png", cv_p3, width = 7, height = 4.5)
+ggsave("results/figures/FIGURE_S14.png", cv_p3, width = 7, height = 4.5)
 
 # for each predator, identify the main prey species from dietcheck (in baseline)
 # sum up total prey biomass
@@ -993,138 +1109,17 @@ other_plot_top_diets <- ms_other_df_diet %>%
   theme(strip.text.y = element_text(angle=0))
 other_plot_top_diets
 
-#ggsave(paste0("results/figures/other_forage_diets.png"), other_plot_forage_diets, width = 7, height = 4.05)
-#ggsave(paste0("results/figures/other_top_diets.png"), other_plot_top_diets, width = 7, height = 4.05)
-
 # combine into one figure
 TL_combo <- other_plot_forage_diets / other_plot_top_diets + # Stack plots vertically
   plot_layout(heights = c(1, 1)) +  # 2:1 ratio between plots
   plot_annotation(tag_levels = 'a') # Add letters A, B
 
 # Save the combined plot
-ggsave("results/figures/stacked_TL.jpeg", TL_combo, height = 8, width = 8, dpi = 600)
+ggsave("results/figures/FIGURE_7.jpeg", TL_combo, height = 8, width = 8, dpi = 600)
 
 #########################
 # SUPPLEMENTARY FIGURES #
 #########################
-
-# S1.1. Harvest specifications --------------------------------------------
-grps <- read.csv("data/GOA_Groups.csv")
-
-# this spreadsheet is available for download from AKFIN Answers
-specs <- read_excel("data/GOA_harvest specs_1986-2024.xlsx", 
-                    sheet = 1,
-                    na = "n/a",
-                    n_max = 131)
-
-# need to clean the data set
-# drop asterisks and commas and turn to numeric
-for(col in names(specs)){
-  specs[[col]] <- gsub("\\*","", specs[[col]])
-  specs[[col]] <- gsub(",","", specs[[col]])
-}
-
-# now handle column names
-# pad years
-colnames(specs) <- c("", "", rep(2024:1986, each = 3))
-# collapse column names with the first row for pivot later
-new_row <- rep(NA, ncol(specs))
-for(i in 1:ncol(specs)){
-  new_row[i] <- paste(specs[1,i], names(specs)[i], sep = "_")
-  new_row[1:2] <- gsub("_","",new_row[1:2])
-}
-
-# set new colnames
-colnames(specs) <- new_row
-# drop old row 1
-specs <- specs[-1,]
-
-# now pad the species column
-for(i in 1:nrow(specs)){
-  if(is.na(specs[i,1])){
-    specs[i,1] <- specs[i-1,1]
-  }
-}
-
-# pivot longer, split spec and year, add Tier and Atlantis functional group
-specs_long <- specs %>%
-  pivot_longer(-c(Species, Area), names_to = "Spec_Year", values_to = "mt") %>%
-  separate(Spec_Year, into = c("Spec", "Year"), sep = "_") %>%
-  filter(Year > 1990, Area %in% c("Total","Total (GW)", "GW")) %>%
-  mutate(mt = as.numeric(mt)) %>%
-  drop_na() %>%
-  mutate(Area = "GOA")
-
-# add in total groundfish catch reconstructions
-# Data is from "Catch Data" tab in AKFIN Answers using the following tags:
-# * Year: 1991-2024
-# * FMP Area: GOA
-# * FMP Subarea: --Select Value--
-# * Gear: --Select Value--
-# * Species Group: --Select Value--
-# * Choose a Report: "Detail with Processor/Vessel Characteristics"
-
-catch_data <- read.csv("data/Groundfish Total Catch.csv", fileEncoding = 'UTF-8-BOM')
-
-# there are a lot of non TAC species reported here, as well as by-catch species, species that are in the FMP but are not groundfish, etc.
-# For the purpose of comparing to ABC/TAC plots, we will filter only the species that have a TAC in the harvest specifications
-# Map species in the catch to species in the harvest specification data set
-tac_key <- read.csv("data/tac_catch_key.csv", header = T)
-
-# process the catch data so that it can be mapped to the harvest specification data
-catch_data_short <- catch_data %>%
-  select(Year, Species.Group.Name, Catch..mt.) %>%
-  left_join(tac_key, by = c("Species.Group.Name" = "Catch_sp")) %>%
-  group_by(Year, TAC_sp) %>%
-  summarise(mt = sum(Catch..mt., na.rm = T)) %>%
-  mutate(Area = "GOA", Spec = "Catch") %>%
-  select(TAC_sp, Area, Spec, Year, mt) %>%
-  rename(Species = TAC_sp)
-
-specs_long <- specs_long %>% rbind(catch_data_short) %>% drop_na()
-
-# order factors
-specs_long$Spec <- factor(specs_long$Spec, levels = c("OFL", "ABC", "TAC", "Catch"))
-
-# format stock names for the plot
-specs_long$Species <- gsub("/","\n",specs_long$Species)
-specs_long$Species <- gsub(" and "," and\n",specs_long$Species)
-specs_long$Species <- gsub(" \\(","\n\\(",specs_long$Species)
-
-# remove mollusks for this plot - small catch 
-specs_long <- specs_long %>%
-  filter(!Species %in% c("Octopus","Squid"))
-
-# set some colors - this plot has lots of species
-# this combination works OK in that the key stocks are readable enough, but it is not greyscale- nor colorblind-friendly
-colors <- c(viridis(11)[2:10], inferno(11)[2:10], cividis(10)[2:9])
-
-# make a bar chart
-harvest_specs_fig <- specs_long %>%
-  #filter(Tier == 3) %>%
-  group_by(Year, Spec, Species) %>%
-  summarise(mt = sum(mt, na.rm = T)) %>%
-  ggplot(aes(x = Year, y = mt/1000, fill = Species))+
-  geom_bar(stat = "identity", position = "stack")+
-  scale_fill_manual(values = colors)+
-  geom_hline(yintercept = 800, linetype = "dashed", color = "red")+
-  theme_bw()+
-  scale_x_discrete(breaks = seq(1992,2024,2))+
-  labs(x = "", y = "1000 mt", fill = "")+
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))+
-  # theme(legend.position="bottom",
-  #       legend.spacing.x = unit(0.1, 'cm'))+
-  guides(fill = guide_legend(ncol = 1))+
-  facet_wrap(~Spec, nrow = 2)
-harvest_specs_fig
-
-ggsave("results/figures/harvest_specs_S1.jpeg", harvest_specs_fig, width = 8, height = 6.5, dpi = 600)
-
-# mean recent catch for text
-tt <- specs_long %>%
-  filter(Spec == "Catch") %>%
-  group_by(Year) %>%
-  summarise(Catch = sum(mt)) 
 
 # Diets -----------------------------------------
 diet_runs <- data.frame("idx" = c(0,1,2,3,4),
@@ -1181,7 +1176,17 @@ atf_diet <- diet_long_preds %>%
 colourCount <- length(unique(atf_diet$Prey_Name))
 colors <- c(viridis(11)[2:10], inferno(11)[2:10])#, cividis(6))
 
-#getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+# plot ATF in the base model only (Fig. S1.3)
+p_atf_diet_base <- atf_diet %>%
+  filter(run == "Base model,\ncalibration fishing") %>%
+  ggplot(aes(x = Cohort+1, y = Prop * 100, fill = Prey_LongName))+
+  geom_bar(stat = 'identity', position = 'stack')+
+  scale_x_continuous(breaks = 1:10)+
+  scale_fill_manual(values = colors)+
+  theme_bw()+
+  labs(x = '', y = "Diet preference (%)", fill = "Prey")
+p_atf_diet_base
+ggsave("results/figures/diet_plots/FIGURE_S2.png", p_atf_diet_base, width = 6, height = 5)
 
 # plot across scenarios (except Base model)
 p_atf_diet <- atf_diet %>%
@@ -1194,19 +1199,7 @@ p_atf_diet <- atf_diet %>%
   labs(x = '', y = "Diet preference (%)", fill = "Prey")+
   facet_wrap(~run)
 p_atf_diet
-ggsave("results/figures/diet_plots/ATF_diet_S3.png", p_atf_diet, width = 8, height = 6)
-
-# plot ATF in the base model only (Fig. S1.3)
-p_atf_diet_base <- atf_diet %>%
-  filter(run == "Base model,\ncalibration fishing") %>%
-  ggplot(aes(x = Cohort+1, y = Prop * 100, fill = Prey_LongName))+
-  geom_bar(stat = 'identity', position = 'stack')+
-  scale_x_continuous(breaks = 1:10)+
-  scale_fill_manual(values = colors)+
-  theme_bw()+
-  labs(x = '', y = "Diet preference (%)", fill = "Prey")
-p_atf_diet_base
-ggsave("results/figures/diet_plots/ATF_diet_S3_Base.png", p_atf_diet_base, width = 6, height = 5)
+ggsave("results/figures/diet_plots/FIGURE_S12.png", p_atf_diet, width = 8, height = 6)
 
 # Halibut
 hal_diet <- diet_long_preds %>%
@@ -1226,9 +1219,9 @@ p_hal_diet <- hal_diet %>%
   theme_bw()+
   labs(x = '', y = "Diet preference (%)", fill = "Prey")
 p_hal_diet
-ggsave("results/figures/diet_plots/HAL_diet_S3_Base.png", p_hal_diet, width = 6, height = 5)
+ggsave("results/figures/diet_plots/FIGURE_S3.png", p_hal_diet, width = 6, height = 5)
 
-# plot all together for Figure S1.10
+# plot all together
 # drop ATF here
 diet_long_preds <- diet_long_preds %>%
   filter(!Predator_Name %in% c("Arrowtooth_flounder", "Halibut"))
@@ -1253,9 +1246,9 @@ p_all_diet <- diet_long_preds %>%
   theme(strip.text.y = element_text(angle=0))
 p_all_diet
 
-ggsave("results/figures/diet_plots/all_S10.png", p_all_diet, width = 8.5, height = 6)
+ggsave("results/figures/diet_plots/FIGURE_S13.png", p_all_diet, width = 8.5, height = 6)
 
-# Production curves S1.5 --------------------------------------------------
+# Production curves --------------------------------------------------
 # These refer to the single-species runs in Step 1
 ss_yield_long <- f_df %>%
   select(-CV)
@@ -1326,53 +1319,206 @@ yield_func_plot <- yield_func %>%
   facet_wrap(~LongName)
 yield_func_plot
 
-#ggsave(paste0("results/figures/yield_functions_S1.5.png"), yield_func_plot, width = 8, height = 6.5)
+ggsave("results/figures/FIGURE_S5.png", yield_func_plot, width = 8, height = 6.5)
 
-# S1.6, stocks below B35% -------------------------------------------------
-# How many stocks are below 35% B0 for each scenario?
-# Use static B0 from Base Scenario for this
-b0 <- ms_yield_df %>% filter(mult == 0, Var == "Biomass", run == "base") %>% dplyr::select(LongName, Mean) %>% rename(b0 = Mean)
+# Biomass and catch ratio of focal grps vs total groundfish ---------------
+# start from the base model (modified from Rovellini et al. 2024)
+biom_base <- read.table("data/base_model_results/outputBiomIndx.txt", sep = " ", header = T)
+biom_base <- biom_base %>%
+  select(Time:DR) %>%
+  pivot_longer(-Time, names_to = "Code", values_to = "mt")
 
-below_target <- ms_yield_df %>%
-  filter(Var == "Biomass") %>%
-  filter(!(run %in% c("atf", "atf_climate") & LongName == "Arrowtooth flounder")) %>%
-  left_join(b0, by = "LongName") %>%
-  mutate(depletion = Mean / b0) %>%
-  mutate(below_target = ifelse(depletion < 0.35, 1, 0)) %>%
-  group_by(run, mult) %>%
-  mutate(n_below_target = sum(below_target)) %>%
-  mutate(prop_below_target = n_below_target / length(unique(LongName))) %>%
+# all fmp groups (i.e., no halibut)
+all_fmp <- c("SHD", "SHP", "DOG", "POL", "COD", "ATF", "FHS", "REX", "FFS", "FFD", "SKL", "SKB", "SKO", "SBF", "POP", "RFS", "RFP", "RFD", "THO", "DFS", "DFD", "SCU")
+
+biom_fmp <- biom_base %>%
+  filter(Code %in% all_fmp) %>%
+  mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0))
+
+# now proportion of is focal biomass over time
+biom_fmp %>%
+  group_by(Code) %>%
+  slice_max(Time, n = 5) %>% # last 5 years
+  group_by(Time, is_focal) %>%
+  summarise(by_focal = sum(mt)) %>%
+  group_by(Time) %>%
+  mutate(tot = sum(by_focal)) %>%
   ungroup() %>%
-  select(run, mult, n_below_target, prop_below_target) %>%
-  distinct()
+  mutate(prop_focal = by_focal / tot) %>%
+  filter(is_focal == 1)
+# If you consider cephalopods, ~60% of the biomass in base run is from the focal groups, slowly declining
+# if you only count fish, >75%
 
-# add scenario information
-below_target <- below_target %>%
-  mutate(`F on\narrowtooth` = ifelse(run %in% c("atf","atf_climate"), 
-                                     "Arrowtooth underexploitation",
-                                     "MFMSY varies for all focal groups"),
-         Climate = ifelse(run %in% c("climate","atf_climate"), "ssp585 (2075-2085)", "Historical (1999)"))
+# now catch
+catch_base <- read.table("data/base_model_results/outputCatch.txt", sep = " ", header = T)
+catch_base <- catch_base %>%
+  select(Time:BIV) %>%
+  pivot_longer(-Time, names_to = "Code", values_to = "mt")
 
-# reorder ATF F
-below_target$`F on\narrowtooth` <- factor(below_target$`F on\narrowtooth`, 
-                                          levels = c("MFMSY varies for all focal groups",
-                                                     "Arrowtooth underexploitation"))
+catch_fmp <- catch_base %>%
+  filter(Code %in% all_fmp) %>%
+  mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0))
 
-p_below_target <- below_target %>%
-  ggplot(aes(x = mult, y = n_below_target))+
-  geom_col()+
+catch_fmp %>%
+  group_by(Code) %>%
+  slice_max(Time, n = 5) %>%
+  group_by(Time, is_focal) %>%
+  summarise(by_focal = sum(mt)) %>%
+  group_by(Time) %>%
+  mutate(tot = sum(by_focal)) %>%
+  ungroup() %>%
+  mutate(prop_focal = by_focal / tot) %>%
+  filter(is_focal == 1)
+# >90% of the catch is from the focal groups, fairly stable
+
+# now do the same for the MS runs from step 2
+# this has the purpose of showing the relation between the focal groups and total biomass
+# source("nc_for_scaling.R")
+# catch_scalars <- bind_rows(lapply(f35_nc, get_catch_ak_scalar)) # this is very slow, it can be optimized in many ways
+# save this as it takes so long to produce
+# write.csv(catch_scalars, "data/catch_scalars_fmp.csv", row.names = F)
+catch_scalars <- read.csv("data/catch_scalars_fmp.csv")
+
+all_yield_list <- list()
+
+for(i in 1:length(f35_results)){
+  
+  print(paste("Doing", f35_results[i]))
+  
+  # grab the index from the file name
+  this_idx <- as.numeric(gsub("-result.rds", "", gsub("results/ms/flat_results/", "", f35_results[i])))
+  
+  # run information based on the index
+  this_run <- oy_key %>% filter(idx == this_idx) %>% pull(run)
+  this_mult <- oy_key %>% filter(idx == this_idx) %>% pull(mult)
+  
+  # extract tables from results
+  this_result <- readRDS(f35_results[i])
+  # the packaging of the RDS object was different between the eScience runs and the batch (doAzureParallel) runs
+  if(length(this_result)==1) {
+    this_result <- this_result[[1]]
+  }
+  
+  biomage <- this_result[[2]]
+  catch <- this_result[[3]]
+  
+  # bring in AK vs BC scalars
+  this_scalar = catch_scalars %>% filter(idx == this_idx)
+  
+  # now extract data
+  # get the end-of-run proportion of focal grop biomass / total gf biomass
+  total_biomass <- biomage %>%
+    pivot_longer(-Time, names_to = 'Code.Age', values_to = 'biomass_mt') %>%
+    separate(Code.Age, into = c('Code', 'Age'), sep = '\\.') %>%
+    filter(Code %in% all_fmp) %>%
+    filter(Code != "HAL") %>% # drop halibut for this, it is not in OY
+    group_by(Time,Code) %>%
+    summarise(biomass_mt = sum(biomass_mt)) %>% # sum across cohorts
+    ungroup() %>%
+    left_join(grps %>% select(Code, Name), by = "Code") %>%
+    left_join(this_scalar, by = "Name") %>%
+    mutate(biomass_mt = biomass_mt * ak_prop) %>%
+    mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0)) %>%
+    group_by(Time, is_focal) %>%
+    summarise(step1 = sum(biomass_mt, na.rm = T)) %>%
+    group_by(Time) %>%
+    mutate(step2 = sum(step1)) %>%
+    ungroup() %>%
+    mutate(prop = step1 / step2) %>%
+    filter(is_focal == 1) %>%
+    slice_max(Time, n = 5) %>%
+    summarise(mean_prop = mean(prop),
+              mean_focal = mean(step1),
+              mean_total = mean(step2),
+              cv_prop = sd(prop) / mean(prop),
+              cv_focal = sd(step1) / mean(step1),
+              cv_total = sd(step2) / mean(step2)) %>%
+    mutate(Var = "Biomass")
+  
+  # total catch
+  total_catch <- catch %>%
+    dplyr::select(c(Time, all_of(all_fmp))) %>%
+    pivot_longer(-Time, names_to = "Code", values_to = "catch_mt") %>%
+    filter(Code %in% all_fmp) %>%
+    filter(Code != "HAL") %>% # drop halibut for this, it is not in OY
+    left_join(grps %>% select(Code, Name), by = "Code") %>%
+    left_join(this_scalar, by = "Name") %>%
+    mutate(catch_mt = catch_mt * ak_prop) %>%
+    mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0)) %>%
+    group_by(Time, is_focal) %>%
+    summarise(step1 = sum(catch_mt, na.rm = T)) %>%
+    group_by(Time) %>%
+    mutate(step2 = sum(step1)) %>%
+    ungroup() %>%
+    mutate(prop = step1 / step2) %>%
+    filter(is_focal == 1) %>%
+    slice_max(Time, n = 5) %>%
+    summarise(mean_prop = mean(prop),
+              mean_focal = mean(step1),
+              mean_total = mean(step2),
+              cv_prop = sd(prop) / mean(prop),
+              cv_focal = sd(step1) / mean(step1),
+              cv_total = sd(step2) / mean(step2)) %>%
+    mutate(Var = "Catch")
+  
+  # # bind all
+  prop_df <- rbind(total_biomass, total_catch) %>%
+    mutate(run = this_run,
+           mult = this_mult,
+           idx = this_idx)
+  
+  # add to multispecies yield list
+  all_yield_list[[i]] <- prop_df
+}
+
+all_yield_df <- bind_rows(all_yield_list)
+
+fmp_key <- data.frame("run" = c("base","atf","climate","atf_climate"),
+                      "run_lab" = c("MFMSY varies for\nall focal groups,\nhistorical climate",
+                                    "Arrowtooth\nunderexploitation,\nhistorical climate",
+                                    "MFMSY varies for\nall focal groups,\nssp585",
+                                    "Arrowtooth\nunderexploitation,\nssp585"))
+
+all_yield_df <- all_yield_df %>% left_join(fmp_key)
+
+# reorder factors for plotting
+all_yield_df$run_lab <- factor(all_yield_df$run_lab, levels = c("Base model,\ncalibration fishing",
+                                                                "MFMSY varies for\nall focal groups,\nhistorical climate",
+                                                                "Arrowtooth\nunderexploitation,\nhistorical climate",
+                                                                "MFMSY varies for\nall focal groups,\nssp585",
+                                                                "Arrowtooth\nunderexploitation,\nssp585"))
+
+# make a plot
+all_yield_df_2 <- all_yield_df %>%
+  select(run_lab, mult, Var, mean_focal, mean_total, cv_focal, cv_total) %>%
+  pivot_longer(-c(run_lab,mult,Var), names_to = "type_grp", values_to = "mt") %>%
+  separate(type_grp, into = c("type", "grp"), sep = "_") %>%
+  pivot_wider(names_from = type, values_from = mt) %>%
+  mutate(grp = gsub("focal","Focal groups", grp),
+         grp = gsub("total", "All GOA FMP species", grp))
+
+p_fmp_2 <- all_yield_df_2 %>%
+  filter(mult > 0) %>%
+  ggplot(aes(x = mult, y = mean/1000, shape = grp))+
+  geom_point(size = 1.5)+
+  scale_shape_manual(values = c(1,2)) +
+  geom_hline(yintercept = 800, color = "red", linetype = "dashed")+
+  geom_vline(xintercept = 1, linetype = "dashed", linewidth = 0.35)+
+  labs(x = expression(MF[MSY] ~ "multiplier"), 
+       y = "1000 mt", 
+       color = "",
+       shape = "") +
+  scale_x_continuous(limits = c(0,4))+
+  scale_y_continuous(limits = c(0,NA))+
   theme_bw()+
-  geom_vline(xintercept = 1, color = "black", linetype = "dotted")+
-  labs(x = expression(MF[MSY] ~ "multiplier"), y = "Stocks with SSB < B35%") +
-  scale_y_continuous(breaks = 0:12)+
-  theme(panel.grid.minor = element_blank())+
-  facet_grid(Climate~`F on\narrowtooth`)
-p_below_target
+  theme(legend.position="bottom",
+        legend.spacing.x = unit(0.1, 'cm'))+
+  facet_grid2(Var~run_lab, scales = "free_y")
+p_fmp_2
+ggsave("results/figures/FIGURE_S7.png", p_fmp_2, width = 8, height = 4.5)
 
-ggsave(paste0("results/figures/below_target_S1.6.jpeg"), p_below_target, width = 6, height = 4, dpi = 600)
-
-# S1.7. Walters plot ------------------------------------------------------
-# create a plot akin to Walters et al. (2005) Fig. 3, except we do not organize it by TL for now
+# Walters plot ------------------------------------------------------
+# create a plot akin to Walters et al. (2005) Fig. 3, except we do not organize it by TL
 # treat this as model-wide MSY
 ss_msy <- f_df %>%
   mutate(experiment = "ss") %>%
@@ -1401,8 +1547,6 @@ ms_vs_ss_walters <- ms_msy %>%
   mutate(ratio = mt_ms / mt_ss)
 
 # reorder levels
-#ms_vs_ss_walters$LongNamePlot <- gsub(" - ", "\n", ms_vs_ss_walters$LongName)
-# ms_vs_ss_walters$LongNamePlot <- reorder(ms_vs_ss_walters$LongNamePlot, -ms_vs_ss_walters$ratio)
 levs <- levels(factor(reorder(ms_vs_ss_walters[ms_vs_ss_walters$run=="base",]$LongName, 
                               -ms_vs_ss_walters[ms_vs_ss_walters$run=="base",]$ratio)))
 
@@ -1437,11 +1581,10 @@ walters_plot <- ms_vs_ss_walters %>%
   theme(axis.text.x = element_text(angle = 45, hjust = 1))+
   facet_wrap(~Fishing, nrow = 2)
 walters_plot
-#ggsave("results/figures/walters_plot_S1.7.png", walters_plot, width = 5, height = 7)
+ggsave("results/figures/FIGURE_S8.png", walters_plot, width = 5, height = 7)
 
-# S1.9. Numbers at age from nc files --------------------------------------------
+# Numbers at age from nc files --------------------------------------------
 # expected to decline and be fairly close to 0 for older age classes when SSB is near 0
-
 # # get the nc files
 f35_nc <- c(list.files(batch_ms_nc, pattern = ".nc", full.names = T))
 # reorder these based on the number in the filename
@@ -1592,273 +1735,5 @@ naa_plot2 <- naa %>%
 naa_plot2
 
 # make a figure
-# ggsave(paste0('results/figures/naa_1.png'), naa_plot1, width = 7, height = 7)
-# ggsave(paste0('results/figures/naa_2.png'), naa_plot2, width = 7, height = 7)
-
-# Version 2
-# from naa to proportions at age
-paa <- naa %>%
-  group_by(run,Fishing,Climate,mult,Name,LongNamePlot)%>%
-  mutate(tot_abun = sum(abun)) %>%
-  ungroup() %>%
-  mutate(paa = abun / tot_abun)
-
-paa_plot1 <- paa %>%
-  filter(LongNamePlot %in% grp1) %>%
-  filter(Climate == "ssp585 (2075-2085)") %>%
-  ggplot(aes(x = age, y = paa, group = mult, color = mult))+
-  geom_line()+
-  scale_color_viridis()+
-  scale_x_continuous(breaks = c(1:10))+
-  theme_bw()+
-  labs(x = "Age class", y = 'Proportion at age (numbers)', color = expression(MF[MSY] ~ "multiplier"))+
-  facet_grid2(LongNamePlot~Fishing, scales = 'free')+
-  theme(strip.text.y = element_text(angle=0))
-paa_plot1
-
-grp2 <- unique(naa$LongNamePlot)[7:12]
-paa_plot2 <- paa %>%
-  filter(LongNamePlot %in% grp2) %>%
-  filter(Climate == "ssp585 (2075-2085)") %>%
-  ggplot(aes(x = age, y = paa, group = mult, color = mult))+
-  geom_line()+
-  scale_color_viridis()+
-  scale_x_continuous(breaks = c(1:10))+
-  theme_bw()+
-  labs(x = "Age class", y = 'Proportion at age (numbers)', color = expression(MF[MSY] ~ "multiplier"))+
-  facet_grid2(LongNamePlot~Fishing, scales = 'free')+
-  theme(strip.text.y = element_text(angle=0))
-paa_plot2
-
-# make a figure
-# ggsave(paste0('results/figures/paa_1.png'), paa_plot1, width = 7, height = 7)
-# ggsave(paste0('results/figures/paa_2.png'), paa_plot2, width = 7, height = 7)
-
-# Biomass and catch ratio of focal grps vs total groundfish ---------------
-# This is to address comments from R2
-# TODO: find a good place for it
-# start from the base model (modified from Rovellini et al. 2024)
-biom_base <- read.table("data/base_model_results/outputBiomIndx.txt", sep = " ", header = T)
-biom_base <- biom_base %>%
-  select(Time:DR) %>%
-  pivot_longer(-Time, names_to = "Code", values_to = "mt")
-
-# all fmp groups plus HAL
-all_fmp <- c("SHD", "SHP", "DOG", "POL", "COD", "ATF", "HAL", "FHS", "REX", "FFS", "FFD", "SKL", "SKB", "SKO", "SBF", "POP", "RFS", "RFP", "RFD", "THO", "DFS", "DFD", "SCU")#, "OCT", "SQD")
-
-biom_fmp <- biom_base %>%
-  filter(Code %in% all_fmp) %>%
-  filter(Code != "HAL") %>%
-  mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0))
-
-# now proportion of is focal biomass over time
-biom_fmp %>%
-  group_by(Code) %>%
-  slice_max(Time, n = 5) %>% # last 5 years
-  group_by(Time, is_focal) %>%
-  summarise(by_focal = sum(mt)) %>%
-  group_by(Time) %>%
-  mutate(tot = sum(by_focal)) %>%
-  ungroup() %>%
-  mutate(prop_focal = by_focal / tot) %>%
-  filter(is_focal == 1)
-# If you consider cephalopods, ~60% of the biomass in base run is from the focal groups, slowly declining
-# if you only count fish, >75%
-
-# now catch
-catch_base <- read.table("data/base_model_results/outputCatch.txt", sep = " ", header = T)
-catch_base <- catch_base %>%
-  select(Time:BIV) %>%
-  pivot_longer(-Time, names_to = "Code", values_to = "mt")
-
-catch_fmp <- catch_base %>%
-  filter(Code %in% all_fmp) %>%
-  filter(Code != "HAL") %>%
-  mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0))
-
-catch_fmp %>%
-  group_by(Code) %>%
-  slice_max(Time, n = 5) %>%
-  group_by(Time, is_focal) %>%
-  summarise(by_focal = sum(mt)) %>%
-  group_by(Time) %>%
-  mutate(tot = sum(by_focal)) %>%
-  ungroup() %>%
-  mutate(prop_focal = by_focal / tot) %>%
-  filter(is_focal == 1)
-# >90% of the catch is from the focal groups, fairly stable
-
-# now do the same for the MS runs from step 2
-# this has the purpose of showing the relation between the focal groups and total biomass
-source("nc_for_scaling.R")
-# catch_scalars <- bind_rows(lapply(f35_nc, get_catch_ak_scalar)) # this is very slow, it can be optimized in many ways
-# save this as it takes so long to produce
-# write.csv(catch_scalars, "data/catch_scalars_fmp.csv", row.names = F)
-catch_scalars <- read.csv("data/catch_scalars_fmp.csv")
-
-all_yield_list <- list()
-
-for(i in 1:length(f35_results)){
-  
-  print(paste("Doing", f35_results[i]))
-  
-  # grab the index from the file name
-  this_idx <- as.numeric(gsub("-result.rds", "", gsub("results/ms/flat_results/", "", f35_results[i])))
-  
-  # run information based on the index
-  this_run <- oy_key %>% filter(idx == this_idx) %>% pull(run)
-  this_mult <- oy_key %>% filter(idx == this_idx) %>% pull(mult)
-  
-  # extract tables from results
-  this_result <- readRDS(f35_results[i])
-  # the packaging of the RDS object was different between the eScience runs and the batch (doAzureParallel) runs
-  if(length(this_result)==1) {
-    this_result <- this_result[[1]]
-  }
-  
-  biomage <- this_result[[2]]
-  catch <- this_result[[3]]
-  
-  # bring in AK vs BC scalars
-  this_scalar = catch_scalars %>% filter(idx == this_idx)
-
-  # now extract data
-  # get the end-of-run proportion of focal grop biomass / total gf biomass
-  total_biomass <- biomage %>%
-    pivot_longer(-Time, names_to = 'Code.Age', values_to = 'biomass_mt') %>%
-    separate(Code.Age, into = c('Code', 'Age'), sep = '\\.') %>%
-    filter(Code %in% all_fmp) %>%
-    filter(Code != "HAL") %>% # drop halibut for this, it is not in OY
-    group_by(Time,Code) %>%
-    summarise(biomass_mt = sum(biomass_mt)) %>% # sum across cohorts
-    ungroup() %>%
-    left_join(grps %>% select(Code, Name), by = "Code") %>%
-    left_join(this_scalar, by = "Name") %>%
-    mutate(biomass_mt = biomass_mt * ak_prop) %>%
-    mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0)) %>%
-    group_by(Time, is_focal) %>%
-    summarise(step1 = sum(biomass_mt, na.rm = T)) %>%
-    group_by(Time) %>%
-    mutate(step2 = sum(step1)) %>%
-    ungroup() %>%
-    mutate(prop = step1 / step2) %>%
-    filter(is_focal == 1) %>%
-    slice_max(Time, n = 5) %>%
-    summarise(mean_prop = mean(prop),
-              mean_focal = mean(step1),
-              mean_total = mean(step2),
-              cv_prop = sd(prop) / mean(prop),
-              cv_focal = sd(step1) / mean(step1),
-              cv_total = sd(step2) / mean(step2)) %>%
-    mutate(Var = "Biomass")
-  
-  # total catch
-  total_catch <- catch %>%
-    dplyr::select(c(Time, all_of(all_fmp))) %>%
-    pivot_longer(-Time, names_to = "Code", values_to = "catch_mt") %>%
-    filter(Code %in% all_fmp) %>%
-    filter(Code != "HAL") %>% # drop halibut for this, it is not in OY
-    left_join(grps %>% select(Code, Name), by = "Code") %>%
-    left_join(this_scalar, by = "Name") %>%
-    mutate(catch_mt = catch_mt * ak_prop) %>%
-    mutate(is_focal = ifelse(Code %in% t3_fg, 1, 0)) %>%
-    group_by(Time, is_focal) %>%
-    summarise(step1 = sum(catch_mt, na.rm = T)) %>%
-    group_by(Time) %>%
-    mutate(step2 = sum(step1)) %>%
-    ungroup() %>%
-    mutate(prop = step1 / step2) %>%
-    filter(is_focal == 1) %>%
-    slice_max(Time, n = 5) %>%
-    summarise(mean_prop = mean(prop),
-              mean_focal = mean(step1),
-              mean_total = mean(step2),
-              cv_prop = sd(prop) / mean(prop),
-              cv_focal = sd(step1) / mean(step1),
-              cv_total = sd(step2) / mean(step2)) %>%
-    mutate(Var = "Catch")
-  
-  # # bind all
-  prop_df <- rbind(total_biomass, total_catch) %>%
-    mutate(run = this_run,
-           mult = this_mult,
-           idx = this_idx)
-  
-  # add to multispecies yield list
-  all_yield_list[[i]] <- prop_df
-}
-
-all_yield_df <- bind_rows(all_yield_list)
-
-fmp_key <- data.frame("run" = c("base","atf","climate","atf_climate"),
-                        "run_lab" = c("MFMSY varies for\nall focal groups,\nhistorical climate",
-                                  "Arrowtooth\nunderexploitation,\nhistorical climate",
-                                  "MFMSY varies for\nall focal groups,\nssp585",
-                                  "Arrowtooth\nunderexploitation,\nssp585"))
-
-all_yield_df <- all_yield_df %>% left_join(fmp_key)
-
-# reorder factors for plotting
-all_yield_df$run_lab <- factor(all_yield_df$run_lab, levels = c("Base model,\ncalibration fishing",
-                                                              "MFMSY varies for\nall focal groups,\nhistorical climate",
-                                                              "Arrowtooth\nunderexploitation,\nhistorical climate",
-                                                              "MFMSY varies for\nall focal groups,\nssp585",
-                                                              "Arrowtooth\nunderexploitation,\nssp585"))
-
-# make a plot
-p_fmp <- all_yield_df %>%
-  filter(mult > 0) %>%
-  ggplot(aes(x = mult, y = mean_prop, color = Var))+
-  geom_point()+
-  # geom_errorbar(aes(ymin = mean_prop - cv_prop,
-  #                   ymax = mean_prop + cv_prop),
-  #               width = 0.075)+
-  scale_color_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
-  theme_bw()+
-  scale_y_continuous(breaks = seq(0,1,0.1), limits = c(0,1))+
-  #scale_x_continuous(breaks = seq(0,4,0.5), limits = c(0,4))+
-  labs(x = expression(MF[MSY] ~ "multiplier"), 
-       y = "Focal groups / total groundfish", 
-       color = "") +
-  facet_grid(~run_lab)
-p_fmp
-#ggsave("results/figures/focal_to_total_ratio.png", p_fmp, width = 6.5, height = 4.5)
-
-# make another plot, do some rearrangement
-all_yield_df_2 <- all_yield_df %>%
-  select(run_lab, mult, Var, mean_focal, mean_total, cv_focal, cv_total) %>%
-  pivot_longer(-c(run_lab,mult,Var), names_to = "type_grp", values_to = "mt") %>%
-  separate(type_grp, into = c("type", "grp"), sep = "_") %>%
-  pivot_wider(names_from = type, values_from = mt) %>%
-  mutate(grp = gsub("focal","Focal groups", grp),
-         grp = gsub("total", "All GOA FMP species", grp))
-
-p_fmp_2 <- all_yield_df_2 %>%
-  filter(mult > 0) %>%
-  ggplot(aes(x = mult, y = mean/1000, shape = grp))+
-  geom_point(size = 1.5)+
-  scale_shape_manual(values = c(1,2)) +
-  #scale_color_viridis_d(option = "inferno", begin = 0.2, end = 0.8)+
-  geom_hline(yintercept = 800, color = "red", linetype = "dashed")+
-  geom_vline(xintercept = 1, linetype = "dashed", linewidth = 0.35)+
-  labs(x = expression(MF[MSY] ~ "multiplier"), 
-       y = "1000 mt", 
-       color = "",
-       shape = "") +
-  scale_x_continuous(limits = c(0,4))+
-  scale_y_continuous(limits = c(0,NA))+
-  theme_bw()+
-  theme(legend.position="bottom",
-        legend.spacing.x = unit(0.1, 'cm'))+
-  facet_grid2(Var~run_lab, scales = "free_y")
-p_fmp_2
-ggsave("results/figures/biom_catch_focal.png", p_fmp_2, width = 8, height = 4.5)
-
-# combine into one figure
-fmp_combo <- p_fmp / p_fmp_2 + # Stack plots vertically
-  plot_layout(heights = c(1, 2)) +  # 2:1 ratio between plots
-  plot_annotation(tag_levels = 'A') # Add letters A, B
-
-# Save the combined plot
-ggsave("results/figures/fmp_p_ms.png", 
-       fmp_combo, height = 7.5, width = 8, dpi = 600)
+ggsave('results/figures/FIGURE_S11_1.png', naa_plot1, width = 7, height = 7)
+ggsave('results/figures/FIGURE_S11_2.png', naa_plot2, width = 7, height = 7)

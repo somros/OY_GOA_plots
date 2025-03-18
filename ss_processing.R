@@ -1,6 +1,6 @@
 # Alberto Rovellini
 # 01/22/2025
-# this code pulls terminal biomass and catch from each run, and it calculates realized F based on catch in the last 5 years
+# this script pulls terminal biomass and catch from each single-species run, and it calculates realized F based on catch in the last 5 years
 # these variables are stored in a table with one row and written to a csv file, to be processed later
 
 library(dplyr)
@@ -96,7 +96,7 @@ for(i in 1:length(results_list)){
   # # catch (one time step after biomass: how much did we catch in this time?)
   catch_t1 <- catch %>% 
     select(Time, all_of(sp)) %>% 
-    filter(Time == 365 * (burnin + 1)) %>% # careful - there is a small transition phase
+    filter(Time == 365 * (burnin + 1)) %>% 
     summarise(across(everything(), ~ mean(.x, na.rm = TRUE))) %>%
     pivot_longer(-Time, names_to = 'Code', values_to = 'catch') %>%
     select(-Time)
