@@ -403,7 +403,7 @@ cv_p_ss <- cv_df_ss %>%
   facet_wrap(~LongName, nrow = 4)
 cv_p_ss
 
-ggsave("results/figures/FIGURE_S6.png", cv_p_ss, width = 8, height = 5)
+ggsave("results/figures/FIGURE_S6.jpeg", cv_p_ss, width = 8, height = 5)
 
 # Figure 4. Global yield ---------------------------------------------------------------
 # # list the rds files
@@ -819,7 +819,7 @@ cv_combo <- cv_p1 / cv_p2 + # Stack plots vertically
   plot_annotation(tag_levels = 'A') # Add letters A, B
 
 # Save the combined plot
-ggsave("results/figures/FIGURE_S10.png", cv_combo, height = 8.5, width = 8, dpi = 600)
+ggsave("results/figures/FIGURE_S10.jpeg", cv_combo, height = 8.5, width = 8, dpi = 600)
 
 # Figure 7: top predators and forage fish ------------------------------
 top_preds <- c("SSL","PIN","DOL","BDF","BSF")
@@ -935,7 +935,7 @@ cv_p3 <- cv_df_other %>%
   guides(color = "none")+
   facet_grid(Climate~Fishing)
 cv_p3
-ggsave("results/figures/FIGURE_S14.png", cv_p3, width = 7, height = 4.5)
+ggsave("results/figures/FIGURE_S14.jpeg", cv_p3, width = 7, height = 4.5)
 
 # for each predator, identify the main prey species from dietcheck (in baseline)
 # sum up total prey biomass
@@ -1186,7 +1186,7 @@ p_atf_diet_base <- atf_diet %>%
   theme_bw()+
   labs(x = '', y = "Diet preference (%)", fill = "Prey")
 p_atf_diet_base
-ggsave("results/figures/diet_plots/FIGURE_S2.png", p_atf_diet_base, width = 6, height = 5)
+ggsave("results/figures/diet_plots/FIGURE_S2.jpeg", p_atf_diet_base, width = 6, height = 5)
 
 # plot across scenarios (except Base model)
 p_atf_diet <- atf_diet %>%
@@ -1199,7 +1199,7 @@ p_atf_diet <- atf_diet %>%
   labs(x = '', y = "Diet preference (%)", fill = "Prey")+
   facet_wrap(~run)
 p_atf_diet
-ggsave("results/figures/diet_plots/FIGURE_S12.png", p_atf_diet, width = 8, height = 6)
+ggsave("results/figures/diet_plots/FIGURE_S12.jpeg", p_atf_diet, width = 8, height = 6)
 
 # Halibut
 hal_diet <- diet_long_preds %>%
@@ -1219,7 +1219,7 @@ p_hal_diet <- hal_diet %>%
   theme_bw()+
   labs(x = '', y = "Diet preference (%)", fill = "Prey")
 p_hal_diet
-ggsave("results/figures/diet_plots/FIGURE_S3.png", p_hal_diet, width = 6, height = 5)
+ggsave("results/figures/diet_plots/FIGURE_S3.jpeg", p_hal_diet, width = 6, height = 5)
 
 # plot all together
 # drop ATF here
@@ -1246,7 +1246,7 @@ p_all_diet <- diet_long_preds %>%
   theme(strip.text.y = element_text(angle=0))
 p_all_diet
 
-ggsave("results/figures/diet_plots/FIGURE_S13.png", p_all_diet, width = 8.5, height = 6)
+ggsave("results/figures/diet_plots/FIGURE_S13.jpeg", p_all_diet, width = 8.5, height = 6)
 
 # Production curves --------------------------------------------------
 # These refer to the single-species runs in Step 1
@@ -1319,7 +1319,7 @@ yield_func_plot <- yield_func %>%
   facet_wrap(~LongName)
 yield_func_plot
 
-ggsave("results/figures/FIGURE_S5.png", yield_func_plot, width = 8, height = 6.5)
+ggsave("results/figures/FIGURE_S5.jpeg", yield_func_plot, width = 8, height = 6.5)
 
 # Biomass and catch ratio of focal grps vs total groundfish ---------------
 # start from the base model (modified from Rovellini et al. 2024)
@@ -1515,7 +1515,7 @@ p_fmp_2 <- all_yield_df_2 %>%
         legend.spacing.x = unit(0.1, 'cm'))+
   facet_grid2(Var~run_lab, scales = "free_y")
 p_fmp_2
-ggsave("results/figures/FIGURE_S7.png", p_fmp_2, width = 8, height = 4.5)
+ggsave("results/figures/FIGURE_S7.jpeg", p_fmp_2, width = 8, height = 4.5)
 
 # Walters plot ------------------------------------------------------
 # create a plot akin to Walters et al. (2005) Fig. 3, except we do not organize it by TL
@@ -1581,7 +1581,7 @@ walters_plot <- ms_vs_ss_walters %>%
   theme(axis.text.x = element_text(angle = 45, hjust = 1))+
   facet_wrap(~Fishing, nrow = 2)
 walters_plot
-ggsave("results/figures/FIGURE_S8.png", walters_plot, width = 5, height = 7)
+ggsave("results/figures/FIGURE_S8.jpeg", walters_plot, width = 5, height = 7)
 
 # Numbers at age from nc files --------------------------------------------
 # expected to decline and be fairly close to 0 for older age classes when SSB is near 0
@@ -1735,5 +1735,5 @@ naa_plot2 <- naa %>%
 naa_plot2
 
 # make a figure
-ggsave('results/figures/FIGURE_S11_1.png', naa_plot1, width = 7, height = 7)
-ggsave('results/figures/FIGURE_S11_2.png', naa_plot2, width = 7, height = 7)
+ggsave('results/figures/FIGURE_S11_1.jpeg', naa_plot1, width = 7, height = 7)
+ggsave('results/figures/FIGURE_S11_2.jpeg', naa_plot2, width = 7, height = 7)
